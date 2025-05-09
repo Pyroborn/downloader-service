@@ -12,8 +12,9 @@ pipeline {
         stage('Setup') {
             steps {
                 // Use Node.js version from nvm or Jenkins tool configuration
-                sh 'nvm use ${NODE_VERSION} || nvm install ${NODE_VERSION}'
-                
+                //sh 'nvm use ${NODE_VERSION} || nvm install ${NODE_VERSION}'
+                checkout scm
+                sh 'npm install'
                 // Install dependencies using clean install
                 sh 'npm ci'
             }
