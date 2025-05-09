@@ -12,11 +12,14 @@ pipeline {
     stages {
         stage('Setup') {
             steps {
-                // Use Node.js version from nvm or Jenkins tool configuration
-                //sh 'nvm use ${NODE_VERSION} || nvm install ${NODE_VERSION}'
-                checkout scm
-                // Install dependencies using clean install
-                sh 'npm ci'
+                script {
+                    // Ensure we're in a node block
+                    node {
+                        checkout scm
+                        // Install dependencies using clean install
+                        sh 'npm ci'
+                    }
+                }
             }
         }
 
@@ -28,36 +31,42 @@ pipeline {
         }
 
         stage('Test') {
-            environment {
-                NODE_ENV = 'test'
-                // Use test-specific configurations
-                MINIO_BUCKET = 'test-bucket'
-                MINIO_ENDPOINT = 'http://minio:9000'
-                PORT = '3000'
-                // Configure Jest JUnit reporter output
-                JEST_JUNIT_OUTPUT_DIR = 'reports'
-                JEST_JUNIT_OUTPUT_NAME = 'junit.xml'
-            }
             steps {
-                // Create reports directory
-                sh 'mkdir -p reports'
-                // Run tests with coverage
-                sh 'npm run test:coverage'
-            }
-            post {
-                always {
-                    // Publish test results from the correct location
-                    junit 'reports/junit.xml'
-                    
-                    // Publish coverage report
-                    publishHTML(target: [
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: 'coverage/lcov-report',
-                        reportFiles: 'index.html',
-                        reportName: 'Coverage Report'
-                    ])
+                script {
+                    node {
+                        // Set up environment variables
+                        withEnv([
+                            "NODE_ENV=test",
+                            "MINIO_BUCKET=test-bucket",
+                            "MINIO_ENDPOINT=http://minio:9000",
+                            "PORT=3000",
+                            "JEST_JUNIT_OUTPUT_DIR=reports",
+                            "JEST_JUNIT_OUTPUT_NAME=junit.xml"
+                        ]) {
+                            // Create reports directory
+                            sh 'mkdir -p reports'
+                            // Run tests with coverage
+                            sh 'npm run test:coverage'
+                        }
+
+                        // Publish test results and coverage
+                        junit(testResults: 'reports/junit.xml', allowEmptyResults: true)
+                        
+                        publishHTML(target: [
+                            allowMissing: true,
+                            alwaysLinkToLastBuild: true,
+                            keepAll: true,
+                            reportDir: 'coverage/lcov-report',
+                            reportFiles: 'index.html',
+                            reportName: 'Coverage Report'
+                        ])
+
+                        // Archive artifacts
+                        archiveArtifacts(
+                            artifacts: 'reports/**, coverage/**',
+                            allowEmptyArchive: true
+                        )
+                    }
                 }
             }
         }
@@ -72,9 +81,11 @@ pipeline {
 
     post {
         always {
-            // Clean workspace but archive test results and coverage first
-            archiveArtifacts artifacts: 'reports/**, coverage/**', allowEmptyArchive: true
-            cleanWs()
+            script {
+                node {
+                    cleanWs()
+                }
+            }
         }
         success {
             echo 'Pipeline completed successfully!'
