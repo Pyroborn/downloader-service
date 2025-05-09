@@ -35,12 +35,17 @@
       "!src/tests/**",
       "!src/config/**"
     ],
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "json"
+    ],
     "reporters": [
       "default",
       [
         "jest-junit",
         {
-          "outputDirectory": "coverage",
+          "outputDirectory": "reports",
           "outputName": "junit.xml",
           "ancestorSeparator": " › ",
           "uniqueOutputName": "false",

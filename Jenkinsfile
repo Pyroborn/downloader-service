@@ -6,6 +6,7 @@ pipeline {
         // MinIO credentials will be injected from Jenkins credentials
         MINIO_ACCESS_KEY = credentials('minio-test-access-key')
         MINIO_SECRET_KEY = credentials('minio-test-secret-key')
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials') // ID in Jenkins for DockerHub creds
     }
 
     stages {
@@ -14,7 +15,6 @@ pipeline {
                 // Use Node.js version from nvm or Jenkins tool configuration
                 //sh 'nvm use ${NODE_VERSION} || nvm install ${NODE_VERSION}'
                 checkout scm
-                sh 'npm install'
                 // Install dependencies using clean install
                 sh 'npm ci'
             }
@@ -34,22 +34,27 @@ pipeline {
                 MINIO_BUCKET = 'test-bucket'
                 MINIO_ENDPOINT = 'http://minio:9000'
                 PORT = '3000'
+                // Configure Jest JUnit reporter output
+                JEST_JUNIT_OUTPUT_DIR = 'reports'
+                JEST_JUNIT_OUTPUT_NAME = 'junit.xml'
             }
             steps {
+                // Create reports directory
+                sh 'mkdir -p reports'
                 // Run tests with coverage
                 sh 'npm run test:coverage'
             }
             post {
                 always {
-                    // Publish test results
-                    junit 'coverage/junit.xml'
+                    // Publish test results from the correct location
+                    junit 'reports/junit.xml'
                     
                     // Publish coverage report
                     publishHTML(target: [
                         allowMissing: false,
-                        alwaysLinkToLastBuild: false,
+                        alwaysLinkToLastBuild: true,
                         keepAll: true,
-                        reportDir: 'coverage',
+                        reportDir: 'coverage/lcov-report',
                         reportFiles: 'index.html',
                         reportName: 'Coverage Report'
                     ])
@@ -67,7 +72,8 @@ pipeline {
 
     post {
         always {
-            // Clean workspace
+            // Clean workspace but archive test results and coverage first
+            archiveArtifacts artifacts: 'reports/**, coverage/**', allowEmptyArchive: true
             cleanWs()
         }
         success {

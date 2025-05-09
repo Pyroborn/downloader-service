@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="18" failures="0" errors="0" time="1.414">
+  <testsuite name="FileService" errors="0" failures="0" skipped="0" timestamp="2025-05-09T10:40:51" time="0.474" tests="9">
+    <testcase classname="FileService listFiles should list files successfully" name="FileService listFiles should list files successfully" time="0.009">
+    </testcase>
+    <testcase classname="FileService listFiles should handle empty response" name="FileService listFiles should handle empty response" time="0">
+    </testcase>
+    <testcase classname="FileService listFiles should handle errors" name="FileService listFiles should handle errors" time="0.034">
+    </testcase>
+    <testcase classname="FileService uploadFile should upload file successfully" name="FileService uploadFile should upload file successfully" time="0.003">
+    </testcase>
+    <testcase classname="FileService uploadFile should handle upload errors" name="FileService uploadFile should handle upload errors" time="0.004">
+    </testcase>
+    <testcase classname="FileService downloadFile should download file successfully" name="FileService downloadFile should download file successfully" time="0.001">
+    </testcase>
+    <testcase classname="FileService downloadFile should handle download errors" name="FileService downloadFile should handle download errors" time="0.002">
+    </testcase>
+    <testcase classname="FileService deleteFile should delete file successfully" name="FileService deleteFile should delete file successfully" time="0">
+    </testcase>
+    <testcase classname="FileService deleteFile should handle delete errors" name="FileService deleteFile should handle delete errors" time="0.002">
+    </testcase>
+  </testsuite>
+  <testsuite name="File Routes" errors="0" failures="0" skipped="0" timestamp="2025-05-09T10:40:51" time="1.065" tests="9">
+    <testcase classname="File Routes GET /files/list should return list of files" name="File Routes GET /files/list should return list of files" time="0.053">
+    </testcase>
+    <testcase classname="File Routes GET /files/list should handle errors" name="File Routes GET /files/list should handle errors" time="0.015">
+    </testcase>
+    <testcase classname="File Routes GET /files/download/:key should download file successfully" name="File Routes GET /files/download/:key should download file successfully" time="0.006">
+    </testcase>
+    <testcase classname="File Routes GET /files/download/:key should handle download errors" name="File Routes GET /files/download/:key should handle download errors" time="0.004">
+    </testcase>
+    <testcase classname="File Routes POST /files/upload should upload file successfully" name="File Routes POST /files/upload should upload file successfully" time="0.013">
+    </testcase>
+    <testcase classname="File Routes POST /files/upload should handle missing file" name="File Routes POST /files/upload should handle missing file" time="0.004">
+    </testcase>
+    <testcase classname="File Routes POST /files/upload should handle upload errors" name="File Routes POST /files/upload should handle upload errors" time="0.005">
+    </testcase>
+    <testcase classname="File Routes DELETE /files/:key should delete file successfully" name="File Routes DELETE /files/:key should delete file successfully" time="0.003">
+    </testcase>
+    <testcase classname="File Routes DELETE /files/:key should handle delete errors" name="File Routes DELETE /files/:key should handle delete errors" time="0.004">
+    </testcase>
+  </testsuite>
+</testsuites>
