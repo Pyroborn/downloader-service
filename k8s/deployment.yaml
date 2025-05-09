@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: downloader-service
+  labels:
+    app: downloader-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: downloader-service
+  template:
+    metadata:
+      labels:
+        app: downloader-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3004"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: downloader-service
+        image: pyroborn/micro-service:latest  # Change this to your registry/image
+        imagePullPolicy: Always  # Changed to Always since we're using a registry
+        ports:
+        - containerPort: 3004
+        env:
+        - name: PORT
+          value: "3004"
+        - name: MINIO_ENDPOINT
+          value: "http://minio-service:9000"
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: access-key
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: secret-key
+        - name: MINIO_BUCKET
+          value: "files"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3004
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3004
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: downloader-service
+spec:
+  selector:
+    app: downloader-service
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3004
+  type: ClusterIP 
