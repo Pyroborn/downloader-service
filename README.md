@@ -29,8 +29,8 @@ A Node.js service for handling file uploads and downloads using MinIO as the sto
    ```
    PORT=3004
    MINIO_ENDPOINT=http://minio-service:9000
-   MINIO_ACCESS_KEY=minioadmin
-   MINIO_SECRET_KEY=minioadmin
+   MINIO_ACCESS_KEY=********
+   MINIO_SECRET_KEY=********
    MINIO_BUCKET=files
    USE_SSL=false
    ```
