@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 
-// Make sure dotenv is initialized
+// Make sure dotenv is initialized - make sure to not include any .env in container
 require('dotenv').config();
 
 // Get JWT_SECRET directly from environment variables
