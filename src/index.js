@@ -4,20 +4,121 @@ require('dotenv').config();
 
 const fileRoutes = require('./routes/fileRoutes');
 const { register } = require('./config/metrics');
+const rabbitmq = require('./config/rabbitmq');
+const messageConsumer = require('./services/messageConsumer');
 
 const app = express();
 const port = process.env.PORT || 3004;
 
+// CORS Configuration - Fixed to avoid "*" with credentials=true which browsers reject
+if (process.env.NODE_ENV === 'development') {
+    const allowedOrigins = ['http://localhost:3000', 'http://localhost:3002', 'http://localhost:3003'];
+    app.use(cors({
+        origin: function(origin, callback) {
+            // Allow requests with no origin (like mobile apps, curl, postman)
+            if (!origin) return callback(null, true);
+            if (allowedOrigins.indexOf(origin) !== -1) {
+                return callback(null, true);
+            } else {
+                return callback(null, false);
+            }
+        },
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+        exposedHeaders: ['Content-Disposition'],
+        credentials: true,
+        preflightContinue: false
+    }));
+    console.log('CORS enabled for development origins');
+} else {
+    // CORS configuration for production
+    const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000'];
+    app.use(cors({
+        origin: function(origin, callback) {
+            if (!origin) return callback(null, true);
+            if (allowedOrigins.indexOf(origin) !== -1) {
+                return callback(null, true);
+            } else {
+                return callback(null, false);
+            }
+        },
+        methods: process.env.CORS_METHODS ? process.env.CORS_METHODS.split(',') : ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowedHeaders: process.env.CORS_HEADERS ? process.env.CORS_HEADERS.split(',') : ['Content-Type', 'Authorization'],
+        exposedHeaders: ['Content-Disposition'],
+        credentials: process.env.CORS_CREDENTIALS === 'true'
+    }));
+    console.log('CORS enabled for specified origins in production mode');
+}
+
 // Middleware
-app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Request logging middleware
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+    next();
+});
+
+// Request metrics middleware
+app.use((req, res, next) => {
+    const startTime = Date.now();
+    
+    // Add a 'finish' listener to track when the response is complete
+    res.on('finish', () => {
+        const duration = (Date.now() - startTime) / 1000; // Convert to seconds
+        
+        // Skip metrics endpoint from being tracked to avoid self-measuring
+        if (!req.path.includes('/metrics') && !req.path.includes('/health')) {
+            // Get a simplified route path (replace IDs with placeholders)
+            const route = req.route?.path || 
+                req.path.replace(/\/[0-9a-f-]{36}\//g, '/:id/').replace(/\/[0-9]+\//g, '/:id/');
+                
+            // Record the request duration
+            const { metrics } = require('./config/metrics');
+            metrics.httpRequestDurationMicroseconds.observe(
+                { 
+                    method: req.method, 
+                    route, 
+                    status_code: res.statusCode 
+                }, 
+                duration
+            );
+            
+            console.log(`Request ${req.method} ${req.path} completed in ${duration.toFixed(3)}s with status ${res.statusCode}`);
+        }
+    });
+    
+    next();
+});
+
+// Handle preflight requests
+app.options('*', cors());
+
+// Initialize RabbitMQ connection and message consumer
+(async () => {
+    try {
+        await rabbitmq.connect();
+        console.log('RabbitMQ connection established');
+        
+        // Initialize message consumer
+        await messageConsumer.initialize();
+        console.log('Message consumer initialized');
+    } catch (error) {
+        console.error('Failed to initialize RabbitMQ or message consumer:', error);
+    }
+})();
 
 // Routes
 app.use('/api/files', fileRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'healthy' });
+    res.status(200).json({ 
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        rabbitMQ: rabbitmq.connection ? 'connected' : 'disconnected'
+    });
 });
 
 // Metrics endpoint for Prometheus
@@ -31,16 +132,50 @@ app.get('/metrics', async (req, res) => {
     }
 });
 
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({
+        message: 'Not Found',
+        path: req.path
+    });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err);
-    res.status(500).json({
+    console.error('Error:', err);
+
+    if (err.message === 'Access denied') {
+        return res.status(403).json({
+            message: 'Access denied',
+            error: 'You do not have permission to access this resource'
+        });
+    }
+
+    if (err.message === 'File not found') {
+        return res.status(404).json({
+            message: 'File not found',
+            error: 'The requested file does not exist'
+        });
+    }
+
+    res.status(err.status || 500).json({
         message: 'Internal server error',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        error: process.env.NODE_ENV === 'development' ? err.message : 'An unexpected error occurred'
     });
 });
 
 // Start server
-app.listen(port, () => {
+const server = app.listen(port, () => {
     console.log(`Downloader service running on port ${port}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+});
+
+// Handle graceful shutdown
+process.on('SIGTERM', async () => {
+    console.log('SIGTERM signal received: closing HTTP server and RabbitMQ connections');
+    server.close(async () => {
+        console.log('HTTP server closed');
+        await rabbitmq.closeConnection();
+        process.exit(0);
+    });
 }); 

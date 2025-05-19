@@ -1,9 +1,43 @@
+# Dependencies
 node_modules
 npm-debug.log
+yarn-debug.log
+yarn-error.log
+package-lock.json
+
+# Environment variables and sensitive files
 .env
+.env.*
+*.local
+*credentials*
+*secret*
+*.key
+*.pem
+*.cert
+*.p12
+*password*
+*token*
+*auth*
+upload-test.js
+test-token*.js
+test-minio.js
+*login*.json
+*login*.txt
+
+# Version control
 .git
 .gitignore
 README.md
 .dockerignore
 Dockerfile
-*.log 
+
+# Testing and logs
+coverage/
+*.log
+logs/
+junit.xml
+reports/
+
+# Build and temp files
+dist/
+build/ 

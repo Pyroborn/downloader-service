@@ -7,14 +7,17 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install --production
+# Install dependencies using ci for reliable builds
+RUN npm ci --only=production
 
 # Copy app source
 COPY . .
+
+# Create directories for uploads and downloads
+RUN mkdir -p uploads downloads
 
 # Expose port
 EXPOSE 3004
 
 # Start the service
-CMD ["npm", "start"] 
+CMD ["node", "src/index.js"] 

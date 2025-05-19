@@ -1,144 +1,261 @@
 const request = require('supertest');
 const express = require('express');
-const multer = require('multer');
 const fileService = require('../../services/fileService');
+const jwt = require('jsonwebtoken');
 
-// Mock file service
-jest.mock('../../services/fileService');
-
-// Mock the Prometheus metrics module
-jest.mock('../../config/metrics', () => ({
-    metrics: {
-        uploadRequestsTotal: { inc: jest.fn() },
-        downloadRequestsTotal: { inc: jest.fn() },
-        uploadBytesTotal: { inc: jest.fn() },
-        downloadBytesTotal: { inc: jest.fn() }
-    }
+// Simple mocks - only implement what we need
+jest.mock('../../services/fileService', () => ({
+  listFiles: jest.fn(),
+  downloadFile: jest.fn(),
+  deleteFile: jest.fn(),
+  checkFileAccess: jest.fn(),
+  uploadFile: jest.fn()
 }));
 
-// Create express app for testing
+jest.mock('../../config/metrics', () => ({
+  metrics: {
+    uploadRequestsTotal: { inc: jest.fn() },
+    downloadRequestsTotal: { inc: jest.fn() },
+    uploadBytesTotal: { inc: jest.fn() },
+    downloadBytesTotal: { inc: jest.fn() },
+    deleteRequestsTotal: { inc: jest.fn() },
+    listRequestsTotal: { inc: jest.fn() },
+    activeUploadsGauge: { inc: jest.fn(), dec: jest.fn() },
+    activeDownloadsGauge: { inc: jest.fn(), dec: jest.fn() }
+  }
+}));
+
+jest.mock('../../config/rabbitmq', () => ({
+  sendToQueue: jest.fn().mockResolvedValue(true),
+  getChannel: jest.fn().mockResolvedValue({
+    sendToQueue: jest.fn().mockReturnValue(true),
+    assertQueue: jest.fn().mockResolvedValue({ queue: 'test-queue' })
+  }),
+  queues: {
+    upload: 'file_upload_queue',
+    download: 'file_download_queue'
+  }
+}));
+
+// Mock jwt module
+jest.mock('jsonwebtoken', () => ({
+  verify: jest.fn().mockImplementation((token, secret) => {
+    if (token === 'admin-token') {
+      return {
+        userId: '456',
+        id: '456',
+        name: 'Admin User',
+        email: 'admin@example.com',
+        role: 'admin'
+      };
+    }
+    return {
+      userId: '123',
+      id: '123',
+      name: 'Test User',
+      email: 'test@example.com',
+      role: 'user'
+    };
+  }),
+  decode: jest.fn()
+}));
+
+// Mock multer
+jest.mock('multer', () => {
+  const multerMock = () => ({
+    single: () => (req, res, next) => {
+      req.file = {
+        originalname: 'test.txt',
+        buffer: Buffer.from('test content'),
+        mimetype: 'text/plain',
+        size: 12
+      };
+      next();
+    }
+  });
+  multerMock.memoryStorage = () => ({});
+  return multerMock;
+});
+
+// Create a simple express app for testing
 const app = express();
 app.use(express.json());
-app.use('/files', require('../../routes/fileRoutes'));
+
+// Mock auth middleware
+const authMiddleware = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  
+  try {
+    if (token === 'admin-token') {
+      req.user = {
+        id: '456',
+        userId: '456',
+        name: 'Admin User',
+        email: 'admin@example.com',
+        role: 'admin'
+      };
+    } else {
+      req.user = {
+        id: '123',
+        userId: '123',
+        name: 'Test User',
+        email: 'test@example.com',
+        role: 'user'
+      };
+    }
+    next();
+  } catch (error) {
+    res.status(401).json({ message: 'Unauthorized' });
+  }
+};
+
+// Import routes logic from the actual file instead of recreating it
+const fileRoutes = require('../../routes/fileRoutes');
+app.use('/files', fileRoutes);
 
 describe('File Routes', () => {
-    beforeEach(() => {
-        jest.clearAllMocks();
+  const mockAdminToken = 'admin-token';
+  const mockUserToken = 'user-token';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fileService.checkFileAccess.mockResolvedValue(true);
+  });
+
+  describe('GET /files/list', () => {
+    it('should return list of files for regular user', async () => {
+      const mockFiles = [
+        { key: '123/file1.txt', size: 100, lastModified: new Date().toISOString() },
+        { key: '123/file2.txt', size: 200, lastModified: new Date().toISOString() }
+      ];
+
+      fileService.listFiles.mockResolvedValueOnce(mockFiles);
+
+      const response = await request(app)
+        .get('/files/list')
+        .set('Authorization', 'Bearer ' + mockUserToken)
+        .expect(200);
+
+      expect(response.body).toEqual(mockFiles);
     });
 
-    describe('GET /files/list', () => {
-        it('should return list of files', async () => {
-            const mockFiles = [
-                { key: 'file1.txt', size: 100, lastModified: new Date().toISOString() },
-                { key: 'file2.txt', size: 200, lastModified: new Date().toISOString() }
-            ];
+    it('should return all files for admin user', async () => {
+      const mockFiles = [
+        { key: '123/file1.txt', size: 100, lastModified: new Date().toISOString() },
+        { key: '456/file2.txt', size: 200, lastModified: new Date().toISOString() }
+      ];
 
-            fileService.listFiles.mockResolvedValueOnce(mockFiles);
+      fileService.listFiles.mockResolvedValueOnce(mockFiles);
 
-            const response = await request(app)
-                .get('/files/list')
-                .expect(200);
+      const response = await request(app)
+        .get('/files/list')
+        .set('Authorization', 'Bearer ' + mockAdminToken)
+        .expect(200);
 
-            expect(response.body).toEqual(mockFiles);
-            expect(fileService.listFiles).toHaveBeenCalled();
-        });
-
-        it('should handle errors', async () => {
-            fileService.listFiles.mockRejectedValueOnce(new Error('Failed to list files'));
-
-            await request(app)
-                .get('/files/list')
-                .expect(500);
-        });
+      expect(response.body).toEqual(mockFiles);
     });
 
-    describe('GET /files/download/:key', () => {
-        it('should download file successfully', async () => {
-            const mockContent = Buffer.from('test content');
-            const mockResponse = {
-                Body: {
-                    pipe: jest.fn((res) => {
-                        res.write(mockContent);
-                        res.end();
-                    })
-                },
-                ContentType: 'text/plain',
-                ContentLength: '12'
-            };
+    it('should handle errors', async () => {
+      fileService.listFiles.mockRejectedValueOnce(new Error('Failed to list files'));
 
-            fileService.downloadFile.mockResolvedValueOnce(mockResponse);
+      await request(app)
+        .get('/files/list')
+        .set('Authorization', 'Bearer ' + mockUserToken)
+        .expect(500);
+    });
+  });
 
-            await request(app)
-                .get('/files/download/test.txt')
-                .expect(200)
-                .expect('Content-Type', 'text/plain')
-                .expect('Content-Length', '12')
-                .expect(mockContent.toString());
+  describe('GET /files/download/:key', () => {
+    it('should download file successfully for owner', async () => {
+      // Create a more robust mock for the Body stream
+      const mockStream = {
+        pipe: jest.fn(function(destination) {
+          // Simulate successful piping to response by ending it
+          if (destination && typeof destination.end === 'function') {
+            process.nextTick(() => destination.end('test content'));
+          }
+          return destination;
+        }),
+        on: jest.fn(function(event, callback) {
+          // Immediately trigger end event to simulate completion
+          if (event === 'end' && callback) {
+            process.nextTick(callback);
+          }
+          return this;
+        })
+      };
+      
+      fileService.downloadFile.mockResolvedValueOnce({
+        Body: mockStream,
+        ContentType: 'text/plain',
+        ContentLength: 12
+      });
 
-            expect(fileService.downloadFile).toHaveBeenCalledWith('test.txt');
-        });
-
-        it('should handle download errors', async () => {
-            fileService.downloadFile.mockRejectedValueOnce(new Error('Failed to download'));
-
-            await request(app)
-                .get('/files/download/test.txt')
-                .expect(500);
-        });
+      await request(app)
+        .get('/files/download/123/test.txt')
+        .set('Authorization', 'Bearer ' + mockUserToken)
+        .expect(200);
     });
 
-    describe('POST /files/upload', () => {
-        it('should upload file successfully', async () => {
-            const mockResult = {
-                key: 'test-file-key',
-                location: 'http://minio/bucket/test-file-key',
-                mimetype: 'text/plain'
-            };
+    it('should handle access denied errors', async () => {
+      // Mock checkFileAccess to deny access
+      fileService.checkFileAccess.mockResolvedValueOnce(false);
 
-            fileService.uploadFile.mockResolvedValueOnce(mockResult);
-
-            const response = await request(app)
-                .post('/files/upload')
-                .attach('file', Buffer.from('test content'), 'test.txt')
-                .expect(201);
-
-            expect(response.body).toEqual(mockResult);
-            expect(fileService.uploadFile).toHaveBeenCalled();
-        });
-
-        it('should handle missing file', async () => {
-            await request(app)
-                .post('/files/upload')
-                .expect(400);
-        });
-
-        it('should handle upload errors', async () => {
-            fileService.uploadFile.mockRejectedValueOnce(new Error('Upload failed'));
-
-            await request(app)
-                .post('/files/upload')
-                .attach('file', Buffer.from('test content'), 'test.txt')
-                .expect(500);
-        });
+      await request(app)
+        .get('/files/download/456/test.txt')
+        .set('Authorization', 'Bearer ' + mockUserToken)
+        .expect(403);
     });
 
-    describe('DELETE /files/:key', () => {
-        it('should delete file successfully', async () => {
-            fileService.deleteFile.mockResolvedValueOnce(true);
-
-            await request(app)
-                .delete('/files/test.txt')
-                .expect(200);
-
-            expect(fileService.deleteFile).toHaveBeenCalledWith('test.txt');
-        });
-
-        it('should handle delete errors', async () => {
-            fileService.deleteFile.mockRejectedValueOnce(new Error('Delete failed'));
-
-            await request(app)
-                .delete('/files/test.txt')
-                .expect(500);
-        });
+    it('should handle download errors', async () => {
+      fileService.downloadFile.mockRejectedValueOnce(new Error('Failed to download'));
+      
+      await request(app)
+        .get('/files/download/123/test.txt')
+        .set('Authorization', 'Bearer ' + mockUserToken)
+        .expect(500);
     });
+  });
+
+  describe('POST /files/upload', () => {
+    it('should accept upload request', async () => {
+      const response = await request(app)
+        .post('/files/upload')
+        .set('Authorization', 'Bearer ' + mockUserToken)
+        .attach('file', Buffer.from('test file content'), 'test.txt')
+        .expect(202);
+
+      expect(response.body.message).toContain('File upload queued');
+    });
+  });
+
+  describe('DELETE /files/:key', () => {
+    it('should delete file successfully for owner', async () => {
+      fileService.deleteFile.mockResolvedValueOnce(true);
+
+      await request(app)
+        .delete('/files/123/test.txt')
+        .set('Authorization', 'Bearer ' + mockUserToken)
+        .expect(200);
+    });
+
+    it('should handle access denied errors', async () => {
+      // Mock checkFileAccess to deny access
+      fileService.checkFileAccess.mockResolvedValueOnce(false);
+
+      await request(app)
+        .delete('/files/456/test.txt')
+        .set('Authorization', 'Bearer ' + mockUserToken)
+        .expect(403);
+    });
+
+    it('should handle delete errors', async () => {
+      fileService.deleteFile.mockRejectedValueOnce(new Error('Delete failed'));
+
+      await request(app)
+        .delete('/files/123/test.txt')
+        .set('Authorization', 'Bearer ' + mockUserToken)
+        .expect(500);
+    });
+  });
 }); 

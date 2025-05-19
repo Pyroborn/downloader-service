@@ -8,7 +8,7 @@ const s3Client = new S3Client({
         accessKeyId: process.env.MINIO_ACCESS_KEY, // these access key names can be changed to MINIO_ROOT_PASSWORD etc but going to handle it with secret file
         secretAccessKey: process.env.MINIO_SECRET_KEY
     },
-    forcePathStyle: true, // Required for MinIO specifically
+    forcePathStyle: true, // Required for MinIO specifically yeah
     signatureVersion: 'v4'
 });
 

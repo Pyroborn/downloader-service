@@ -1,117 +1,120 @@
 # Downloader Service
 
-A Node.js service for handling file uploads and downloads using MinIO as the storage backend.
+A microservice for handling file uploads and downloads using MinIO object storage.
 
 ## Features
 
-- File upload with automatic key generation
-- File download by key
-- File deletion
-- MinIO integration using AWS S3 SDK
-- Support for any file type
-- 10MB file size limit (configurable)
+- File upload to MinIO storage
+- File download from MinIO storage
+- User access control based on roles
+- Metrics for monitoring
+- Health checks for Kubernetes readiness/liveness probes
 
-## Prerequisites
+## Requirements
 
-- Node.js 14+
-- MinIO server running (accessible at http://minio-service:9000)
-- MinIO credentials (access key and secret key)
+- Node.js 18+
+- MinIO server
+- RabbitMQ
+- JWT authentication service
 
-## Setup
+## Local Development
 
-1. Install dependencies:
-   ```bash
+1. Clone the repository
+2. Install dependencies:
+   ```
    npm install
    ```
-
-2. Configure environment variables:
-   Create a `.env` file with the following variables:
+3. Create a `.env` file based on the `.env.example` template
+4. Start the service:
    ```
-   PORT=3004
-   MINIO_ENDPOINT=http://minio-service:9000
-   MINIO_ACCESS_KEY=********
-   MINIO_SECRET_KEY=********
-   MINIO_BUCKET=files
-   USE_SSL=false
-   ```
-
-3. Start the service:
-   ```bash
    npm start
    ```
 
-   For development with auto-reload:
-   ```bash
-   npm run dev
+## Docker Development
+
+1. Build the Docker image:
    ```
+   npm run docker:build
+   ```
+2. Run the service with Docker:
+   ```
+   npm run docker:run
+   ```
+
+## Kubernetes Deployment
+
+The service is designed to run in a Kubernetes environment with the following resources:
+
+1. Create the Kubernetes resources:
+   ```
+   kubectl apply -f k8s/
+   ```
+
+2. For Minikube, build the image directly in Minikube's Docker:
+   ```
+   eval $(minikube docker-env)
+   npm run docker:build
+   kubectl apply -f k8s/
+   ```
+
+3. Required secrets:
+   - `minio-credentials` with `access-key` and `secret-key`
+   - `microservice-secrets` with `jwt-secret`
+
+4. Environment variables are managed through:
+   - ConfigMaps for non-sensitive data
+   - Secrets for sensitive information
+   - Direct values for standard configurations
+
+## Testing
+
+Run the tests:
+```
+npm test
+```
+
+For test coverage:
+```
+npm run test:coverage
+```
+
+## Metrics
+
+Metrics are exposed on `/metrics` endpoint for Prometheus:
+- Total download bytes
+- Total upload bytes
+- Download requests count
+- Upload requests count 
+- Active uploads gauge
+- Active downloads gauge
+
+## Health Checks
+
+The service provides health check endpoints:
+- `/health/live`: liveness probe
+- `/health/ready`: readiness probe
+- `/health`: combined health status
 
 ## API Endpoints
 
-### Upload File
-- **POST** `/api/files/upload`
-- Content-Type: `multipart/form-data`
-- Body: `file` (file field)
-- Response: 
-  ```json
-  {
-    "key": "1234567890-filename.ext",
-    "location": "http://minio-service:9000/files/1234567890-filename.ext",
-    "mimetype": "application/octet-stream"
-  }
-  ```
+### File Operations
+- `GET /files/list`: Get a list of files accessible to the user
+- `POST /files/upload`: Upload a file
+- `GET /files/download/:key`: Download a file
+- `DELETE /files/:key`: Delete a file
 
-### Download File
-- **GET** `/api/files/download/:key`
-- Response: File stream with appropriate headers
+### Debug
+- `GET /debug-token`: Debug endpoint for JWT token verification
 
-### Delete File
-- **DELETE** `/api/files/:key`
-- Response:
-  ```json
-  {
-    "message": "File deleted successfully"
-  }
-  ```
+## Configuration
 
-### Health Check
-- **GET** `/health`
-- Response:
-  ```json
-  {
-    "status": "healthy"
-  }
-  ```
-
-## Error Handling
-
-The service includes comprehensive error handling for:
-- File not found
-- Upload failures
-- Download failures
-- Invalid file types
-- File size exceeded
-- Server errors
-
-## Security
-
-- File size limit of 10MB (configurable in routes)
-- CORS enabled
-- Environment variable configuration
-- No virtual hosted bucket style (path style access)
-- Custom credentials support 
-
-
-## jenkins pipeline config
-
-Create these credentials in Jenkins:
-minio-test-access-key
-minio-test-secret-key
-
-Install these Jenkins plugins:
-JUnit plugin
-HTML Publisher plugin
-NodeJS plugin
-
-Configure NodeJS in Jenkins global tool configuration
-
-Make sure your Jenkins agent has nvm installed or configure the NodeJS plugin properly
+Configuration is managed through environment variables:
+- `PORT`: The port the service runs on (default: 3004)
+- `JWT_SECRET`: Secret for verifying JWT tokens
+- `MINIO_ENDPOINT`: MinIO server endpoint
+- `MINIO_ACCESS_KEY`: MinIO access key
+- `MINIO_SECRET_KEY`: MinIO secret key
+- `MINIO_BUCKET`: MinIO bucket name
+- `USE_SSL`: Whether to use SSL for MinIO
+- `RABBITMQ_URL`: RabbitMQ server URL
+- `ALLOWED_ORIGINS`: CORS allowed origins

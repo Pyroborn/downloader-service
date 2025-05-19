@@ -25,6 +25,20 @@ jest.mock('../config/metrics', () => ({
         },
         downloadBytesTotal: {
             inc: jest.fn()
+        },
+        deleteRequestsTotal: {
+            inc: jest.fn()
+        },
+        listRequestsTotal: {
+            inc: jest.fn()
+        },
+        activeUploadsGauge: {
+            inc: jest.fn(),
+            dec: jest.fn()
+        },
+        activeDownloadsGauge: {
+            inc: jest.fn(),
+            dec: jest.fn()
         }
     }
 })); 

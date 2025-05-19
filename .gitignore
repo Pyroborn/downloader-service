@@ -45,4 +45,21 @@ pids/
 .npm
 
 # Optional eslint cache
-.eslintcache 
+.eslintcache
+
+# Credentials and sensitive data
+*credentials*
+*secret*
+*.key
+*.pem
+*.cert
+*.p12
+*password*
+*token*
+upload-test.js
+test-token*.js
+test-minio.js
+*login*.json
+*login*.txt 
+print-*
+reports/
