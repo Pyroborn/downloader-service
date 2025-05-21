@@ -1,5 +1,6 @@
 const amqp = require('amqplib');
 const { metrics } = require('./metrics'); 
+const crypto = require('crypto');
 require('dotenv').config();
 
 // RabbitMQ configuration
@@ -10,6 +11,33 @@ const queueDownload = process.env.RABBITMQ_QUEUE_DOWNLOAD || 'file_download_queu
 // Create connection and channel
 let connection = null;
 let channel = null;
+
+// Generate a unique message ID for deduplication
+function generateMessageId(message) {
+    // Create a deterministic hash of the message content
+    if (typeof message === 'object') {
+        // For upload messages, create a hash from user ID and file name/size
+        if (message.file && message.metadata) {
+            const { originalname, size } = message.file;
+            const userId = message.metadata.id || message.metadata.userId;
+            return crypto.createHash('md5')
+                .update(`${userId}-${originalname}-${size}-${Date.now()}`)
+                .digest('hex');
+        }
+        
+        // For download messages, use the key and user ID
+        if (message.key && message.user) {
+            const { key } = message;
+            const userId = message.user.userId;
+            return crypto.createHash('md5')
+                .update(`${userId}-${key}-${Date.now()}`)
+                .digest('hex');
+        }
+    }
+    
+    // Fallback to a random ID + timestamp
+    return `${crypto.randomBytes(8).toString('hex')}-${Date.now()}`;
+}
 
 // Connect to RabbitMQ
 async function connect() {
@@ -66,11 +94,17 @@ async function sendToQueue(queue, message) {
             await connect();
         }
         
-        // Send message as buffer
+        // Generate a message ID for deduplication
+        const messageId = generateMessageId(message);
+        
+        // Send message as buffer with persistent flag and messageId
         const success = channel.sendToQueue(
             queue, 
             Buffer.from(JSON.stringify(message)), 
-            { persistent: true }
+            { 
+                persistent: true,
+                messageId: messageId
+            }
         );
         
         // Update queue metrics after sending
@@ -86,7 +120,10 @@ async function sendToQueue(queue, message) {
         return channel.sendToQueue(
             queue, 
             Buffer.from(JSON.stringify(message)), 
-            { persistent: true }
+            { 
+                persistent: true,
+                messageId: generateMessageId(message)
+            }
         );
     }
 }
@@ -107,7 +144,9 @@ async function consumeQueue(queue, callback) {
                 try {
                     console.log(`[RabbitMQ] Received message from ${queue}, processing...`);
                     const content = JSON.parse(msg.content.toString());
-                    await callback(content);
+                    
+                    // Pass the message and properties to the callback
+                    await callback(content, msg.properties);
                     
                     // Explicitly acknowledge the message once processed
                     channel.ack(msg);

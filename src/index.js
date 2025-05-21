@@ -56,7 +56,18 @@ app.use(express.urlencoded({ extended: true }));
 
 // Request logging middleware
 app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+    // Only log essential information and skip health checks
+    if (!req.path.includes('/health') && !req.path.includes('/metrics')) {
+        // For file downloads, only log filename, not the full path
+        if (req.path.includes('/download/')) {
+            const filename = req.path.split('/').pop().split('?')[0];
+            console.log(`${new Date().toISOString().split('T')[1]} - ${req.method} Download: ${filename}`);
+        } 
+        // For other API requests, minimal logging
+        else if (!req.path.includes('/debug')) {
+            console.log(`${new Date().toISOString().split('T')[1]} - ${req.method} ${req.path.split('/').slice(0, 3).join('/')}`);
+        }
+    }
     next();
 });
 
@@ -85,7 +96,10 @@ app.use((req, res, next) => {
                 duration
             );
             
-            console.log(`Request ${req.method} ${req.path} completed in ${duration.toFixed(3)}s with status ${res.statusCode}`);
+            // Only log if response is not successful or takes longer than expected
+            if (res.statusCode >= 400 || duration > 1.0) {
+                console.log(`Request ${req.method} ${req.path} completed in ${duration.toFixed(3)}s with status ${res.statusCode}`);
+            }
         }
     });
     

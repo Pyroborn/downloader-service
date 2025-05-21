@@ -1,6 +1,31 @@
 const fileService = require('./fileService');
 const rabbitmq = require('../config/rabbitmq');
 
+// Create a deduplication cache to prevent duplicate message processing
+// This is critical for HPA scenarios where multiple instances might process the same message
+const processedMessages = new Map();
+const MESSAGE_CACHE_TTL = 60000; // 1 minute TTL for processed message IDs
+
+// Function to check if a message has been processed recently
+function isMessageDuplicate(messageId) {
+    return processedMessages.has(messageId);
+}
+
+// Function to mark a message as processed
+function markMessageProcessed(messageId) {
+    processedMessages.set(messageId, Date.now());
+    
+    // Clean up old entries every 100 messages
+    if (processedMessages.size > 100) {
+        const now = Date.now();
+        for (const [id, timestamp] of processedMessages.entries()) {
+            if (now - timestamp > MESSAGE_CACHE_TTL) {
+                processedMessages.delete(id);
+            }
+        }
+    }
+}
+
 class MessageConsumer {
     constructor() {
         this.isInitialized = false;
@@ -15,16 +40,12 @@ class MessageConsumer {
             // Connect to RabbitMQ
             await rabbitmq.connect();
             
-            // Start consuming from upload queue
+            // Start consuming from upload queue only
             await rabbitmq.consumeQueue(rabbitmq.queues.upload, 
                 this.handleUploadMessage.bind(this));
             
-            // Start consuming from download queue
-            await rabbitmq.consumeQueue(rabbitmq.queues.download, 
-                this.handleDownloadMessage.bind(this));
-            
             this.isInitialized = true;
-            console.log('Message consumer initialized successfully');
+            console.log('Message consumer initialized for uploads only');
         } catch (error) {
             console.error('Failed to initialize message consumer:', error);
             // Retry initialization after delay
@@ -33,9 +54,15 @@ class MessageConsumer {
     }
 
     // Handle file upload message
-    async handleUploadMessage(message) {
+    async handleUploadMessage(message, properties) {
         try {
-            console.log('Processing upload message:', message);
+            // Check if we've recently processed this message (based on messageId or content hash)
+            const messageId = properties?.messageId || JSON.stringify(message);
+            
+            if (isMessageDuplicate(messageId)) {
+                console.log(`Skipping duplicate message: ${messageId.substring(0, 20)}...`);
+                return { skipped: true, reason: 'duplicate' };
+            }
             
             // Validate message
             if (!message.file || !message.metadata) {
@@ -54,7 +81,9 @@ class MessageConsumer {
             metadata.id = userId;
             metadata.userId = userId;
             
-            console.log(`Processing upload for user ID: ${userId}, role: ${metadata.role || 'user'}`);
+            // Minimal logging with just the filename
+            const originalName = message.file.originalname || 'unknown';
+            console.log(`Processing upload via queue: ${originalName} (${userId})`);
             
             // Create a Buffer from base64 string if it's a string
             let fileBuffer;
@@ -76,7 +105,12 @@ class MessageConsumer {
             
             // Upload file using fileService
             const result = await fileService.uploadFile(file, metadata);
-            console.log('File uploaded successfully:', result.key);
+            
+            // Log success with minimal info
+            console.log(`Upload completed via queue: ${result.key.split('/').pop()}`);
+            
+            // Mark this message as processed to prevent duplicate processing
+            markMessageProcessed(messageId);
             
             return result;
         } catch (error) {
@@ -88,12 +122,17 @@ class MessageConsumer {
     // Handle file download message
     async handleDownloadMessage(message) {
         try {
-            console.log('Processing download message:', message);
+            // We should not be receiving download messages via RabbitMQ anymore
+            // Downloads are now handled directly in the HTTP route
+            // This is kept for backward compatibility
             
             // Validate message
             if (!message.key || !message.user) {
                 throw new Error('Invalid download message: missing key or user');
             }
+            
+            // Log warning about unexpected message
+            console.warn(`UNEXPECTED: Download message received via queue for: ${message.key.split('/').pop()}`);
             
             // Check file access
             const canAccess = await fileService.checkFileAccess(message.key, message.user.userId, message.user.role);
@@ -103,7 +142,6 @@ class MessageConsumer {
             
             // Download file using fileService
             const file = await fileService.downloadFile(message.key, message.user);
-            console.log('File downloaded successfully:', message.key);
             
             // Return file metadata (we don't return the actual file in the queue response)
             return {

@@ -44,7 +44,6 @@ class FileService {
 
     async listFiles(user) {
         try {
-            console.log('ListFiles called with user:', JSON.stringify(user));
             const command = new ListObjectsV2Command({
                 Bucket: this.bucket
             });
@@ -61,7 +60,6 @@ class FileService {
                 if (user && user.role !== 'admin') {
                     // Use userId property consistently (not id)
                     const userId = user.userId || user.id;
-                    console.log(`Filtering files for user ID: ${userId}, role: ${user.role}`);
                     
                     if (!userId) {
                         console.warn('User ID missing in filter, returning empty list for security');
@@ -69,11 +67,13 @@ class FileService {
                     }
                     
                     const filteredFiles = files.filter(file => file.key.startsWith(`${userId}/`));
-                    console.log(`Found ${filteredFiles.length} files for user ID ${userId} out of ${files.length} total files`);
+                    // Reduced logging
+                    if (filteredFiles.length === 0 && files.length > 0) {
+                        console.log(`No files found for user ID ${userId} out of ${files.length} total files`);
+                    }
                     return filteredFiles;
                 }
 
-                console.log(`Returning all ${files.length} files for admin user`);
                 return files;
             } catch (bucketError) {
                 console.error('Error listing files from bucket:', bucketError);

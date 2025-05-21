@@ -74,14 +74,7 @@ router.get('/debug-token', (req, res) => {
 // List files function - Protected
 router.get('/list', authMiddleware, async (req, res) => {
     try {
-        // Debug the user object in the request
-        console.log('User info in list request:', {
-            userId: req.user.userId,
-            id: req.user.id,
-            role: req.user.role
-        });
-
-        // Ensure we have a consistent user object with both userId and id properties
+        // Use a consistent user object with both userId and id properties
         const userInfo = {
             userId: req.user.userId,
             id: req.user.userId, // Add id property with same value for compatibility
@@ -140,36 +133,30 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
     }
 });
 
-// Download file function - Protected and Using RabbitMQ
-// Allow token in URL query parameter
+// Download file function (direct streaming without RabbitMQ)
 router.get('/download/:key(*)', async (req, res) => {
+    let file = null;
+    
     try {
         const { key } = req.params;
         // Decode the key in case it was URL-encoded
         const decodedKey = decodeURIComponent(key);
+        const filename = decodedKey.split('/').pop();
         
-        console.log(`Download requested for file with key: ${decodedKey}`);
-        
-        let token;
-        
-        // Check for token in Authorization header first
+        // Process authentication token - check header first, then query parameter
+        let token = null;
         const authHeader = req.headers.authorization;
         if (authHeader && authHeader.startsWith('Bearer ')) {
             token = authHeader.split(' ')[1];
-        }
-        
-        // If token not found in header, check URL query parameter
-        if (!token && req.query.token) {
+        } else if (req.query.token) {
             token = req.query.token;
-            console.log('Using token from URL query parameter');
         }
         
-        // If no token provided, return unauthorized
         if (!token) {
             return res.status(401).json({ error: 'Authentication required' });
         }
         
-        // Verify the token
+        // Verify token
         try {
             const JWT_SECRET = (process.env.JWT_SECRET || 'your-secret-key').trim();
             const decoded = jwt.verify(token, JWT_SECRET);
@@ -180,68 +167,53 @@ router.get('/download/:key(*)', async (req, res) => {
                 email: decoded.email
             };
         } catch (error) {
-            console.error('Token verification failed:', error.message);
-            return res.status(401).json({ 
-                error: 'Invalid token: ' + error.message
-            });
+            return res.status(401).json({ error: 'Invalid token' });
         }
         
-        // Check if user has access to the file
+        // Check access permissions
         const canAccess = await fileService.checkFileAccess(decodedKey, req.user.userId, req.user.role);
         if (!canAccess) {
             return res.status(403).json({ message: 'Access denied to this file' });
         }
 
-        // Create message for download queue
-        const message = {
-            key: decodedKey,
-            user: {
-                userId: req.user.userId,
-                role: req.user.role
-            }
-        };
-
-        // Send download request to queue
-        await rabbitmq.sendToQueue(rabbitmq.queues.download, message);
-
-        // Download directly for the HTTP response since we need to stream the file
-        const file = await fileService.downloadFile(decodedKey, req.user);
+        // Use a single request ID to track this download and detect duplicates
+        const requestId = req.query.requestId || Date.now();
         
-        // Extract filename from the key, removing any potential path prefixes
-        const filename = decodedKey.split('/').pop();
+        // Get the file from storage - this is the only place we handle file downloads now
+        file = await fileService.downloadFile(decodedKey, req.user);
         
-        // Set the appropriate headers
+        // Set appropriate headers for download
         res.setHeader('Content-Type', file.ContentType || 'application/octet-stream');
         if (file.ContentLength) {
             res.setHeader('Content-Length', file.ContentLength);
         }
         
-        // Use encodeURIComponent for filename to handle special characters properly
         const encodedFilename = encodeURIComponent(filename);
         res.setHeader('Content-Disposition', `attachment; filename="${encodedFilename}"`);
-        
-        // Set additional headers to prevent caching for better download experience
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         res.setHeader('Pragma', 'no-cache');
         res.setHeader('Expires', '0');
+        res.setHeader('X-Request-ID', requestId);
         
-        // Pipe the file stream to the response
+        // Pipe the file directly to response
         file.Body.pipe(res);
         
-        // Handle errors in the stream
-        file.Body.on('error', (streamError) => {
-            console.error('Stream error during download:', streamError);
-            // If headers are not sent yet, send an error response
-            if (!res.headersSent) {
-                res.status(500).json({ message: 'Error streaming file data' });
-            } else {
-                // If headers are already sent, destroy the stream
-                res.destroy();
-            }
+        // Log success once the file is completely sent (in the 'finish' event)
+        res.on('finish', () => {
+            console.log(`Download completed for: ${filename}`);
         });
     } catch (error) {
-        console.error('Download error:', error);
-        res.status(500).json({ message: 'Failed to download file' });
+        // Only log errors, not regular operation
+        console.error('Download error:', error.message);
+        
+        // If headers not sent yet, return error response
+        if (!res.headersSent) {
+            res.status(500).json({ message: 'Failed to download file' });
+        } else if (file && file.Body) {
+            // If we already started streaming but encountered an error
+            file.Body.destroy();
+            res.destroy();
+        }
     }
 });
 
@@ -249,10 +221,8 @@ router.get('/download/:key(*)', async (req, res) => {
 router.delete('/:key(*)', authMiddleware, async (req, res) => {
     try {
         const { key } = req.params;
-        // Decode the key in case it was URL-encoded
         const decodedKey = decodeURIComponent(key);
-        
-        console.log(`Delete requested for file with key: ${decodedKey}`);
+        const filename = decodedKey.split('/').pop();
 
         // Check if user has access to delete the file
         const canDelete = await fileService.checkFileAccess(decodedKey, req.user.userId, req.user.role);
