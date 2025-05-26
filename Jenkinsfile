@@ -59,7 +59,7 @@ pipeline {
             steps {
                 script {
                     // Build the Docker image
-                    sh 'docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} .'
+                    sh "docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} ."
                 }
             }
         }
@@ -71,7 +71,7 @@ pipeline {
                     sh 'mkdir -p security-reports'
                     
                     // Run Trivy scan but continue even if vulnerabilities are found
-                    sh '''
+                    sh """
                         # Install Trivy if not already installed (only needed first time)
                         if ! command -v trivy &> /dev/null; then
                             echo "Trivy not found, installing..."
@@ -80,11 +80,11 @@ pipeline {
                         fi
                         
                         # Run Trivy scan and output to HTML and JSON reports
-                        trivy image --no-progress --exit-code 0 --format template --template "@/tmp/trivy/contrib/html.tpl" -o security-reports/trivy-report.html downloader-service:${BUILD_NUMBER}
-                        trivy image --no-progress --exit-code 0 --format json -o security-reports/trivy-report.json downloader-service:${BUILD_NUMBER}
+                        trivy image --no-progress --exit-code 0 --format template --template "@/tmp/trivy/contrib/html.tpl" -o security-reports/trivy-report.html ${IMAGE_NAME}:${BUILD_NUMBER}
+                        trivy image --no-progress --exit-code 0 --format json -o security-reports/trivy-report.json ${IMAGE_NAME}:${BUILD_NUMBER}
                         
                         echo "Security scan completed - results won't fail the build"
-                    '''
+                    """
                     
                     // Publish HTML report
                     publishHTML(target: [
