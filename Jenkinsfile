@@ -79,10 +79,10 @@ pipeline {
                             export PATH=$PATH:/tmp
                         fi
                         
+                        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl -o /tmp/html.tpl
                         # Run Trivy scan and output to HTML and JSON reports
-                        trivy image --no-progress --exit-code 0 --scanners vuln --format html -o security-reports/trivy-report.html ${IMAGE_NAME}:${BUILD_NUMBER}
+                        trivy image --no-progress --exit-code 0 --scanners vuln --format template --template /tmp/html.tpl -o security-reports/trivy-report.html ${IMAGE_NAME}:${BUILD_NUMBER}
                         trivy image --no-progress --exit-code 0 --scanners vuln --format json -o security-reports/trivy-report.json ${IMAGE_NAME}:${BUILD_NUMBER}
-                        
                         echo "Security scan completed - results won't fail the build"
                     """
                     
