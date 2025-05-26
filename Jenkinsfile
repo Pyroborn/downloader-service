@@ -80,8 +80,8 @@ pipeline {
                         fi
                         
                         # Run Trivy scan and output to HTML and JSON reports
-                        trivy image --no-progress --exit-code 0 --format template --template "@/tmp/trivy/contrib/html.tpl" -o security-reports/trivy-report.html ${IMAGE_NAME}:${BUILD_NUMBER}
-                        trivy image --no-progress --exit-code 0 --format json -o security-reports/trivy-report.json ${IMAGE_NAME}:${BUILD_NUMBER}
+                        trivy image --no-progress --exit-code 0 --scanners vuln --format html -o security-reports/trivy-report.html ${IMAGE_NAME}:${BUILD_NUMBER}
+                        trivy image --no-progress --exit-code 0 --scanners vuln --format json -o security-reports/trivy-report.json ${IMAGE_NAME}:${BUILD_NUMBER}
                         
                         echo "Security scan completed - results won't fail the build"
                     """
