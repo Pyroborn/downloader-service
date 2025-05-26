@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    environment {
+        IMAGE_NAME = 'pyroborn/downloader-service'
+    }
+
     stages {
         stage('Setup') {
             steps {
@@ -55,7 +59,7 @@ pipeline {
             steps {
                 script {
                     // Build the Docker image
-                    sh 'docker build -t downloader-service:${BUILD_NUMBER} .'
+                    sh 'docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} .'
                 }
             }
         }
@@ -102,6 +106,27 @@ pipeline {
         }
     }
 
+    stage('Push to DockerHub') {
+            steps {
+                script {
+                    // Create a dummy docker config (optional on newer Jenkins)
+                    sh '''
+                        mkdir -p ${DOCKER_CONFIG}
+                        echo '{"auths": {"https://index.docker.io/v1/": {}}}' > ${DOCKER_CONFIG}/config.json
+                    '''
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', passwordVariable: 'DOCKERHUB_PASSWORD', usernameVariable: 'DOCKERHUB_USERNAME')]) {
+                        sh '''
+                            echo "${DOCKERHUB_PASSWORD}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+                            docker push ${IMAGE_NAME}:${BUILD_NUMBER}
+                            docker push ${IMAGE_NAME}:latest
+                            docker logout
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
     post {
         always {
             cleanWs()
@@ -113,4 +138,3 @@ pipeline {
             echo 'Pipeline failed!'
         }
     }
-} 
