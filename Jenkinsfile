@@ -2,7 +2,12 @@ pipeline {
     agent any
 
     environment {
+        NODE_VERSION = '18'
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')
+        DOCKER_REGISTRY = 'docker.io/pyroborn'
         IMAGE_NAME = 'pyroborn/downloader-service'
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        DOCKER_CONFIG = "${WORKSPACE}/.docker"
     }
 
     stages {
