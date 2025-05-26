@@ -104,7 +104,6 @@ pipeline {
                 }
             }
         }
-    }
 
     stage('Push to DockerHub') {
             steps {
@@ -124,9 +123,8 @@ pipeline {
                     }
                 }
             }
-        }
     }
-
+    }
     post {
         always {
             cleanWs()
@@ -138,3 +136,4 @@ pipeline {
             echo 'Pipeline failed!'
         }
     }
+}
