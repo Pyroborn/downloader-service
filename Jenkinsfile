@@ -124,7 +124,7 @@ pipeline {
                 // Download HTML template for nice Trivy output (if not cached)
                 sh '''
                     if [ ! -f /tmp/html.tpl ]; then
-                    curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl -o /tmp/html.tpl
+                        wget -q -O /tmp/html.tpl https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl
                     fi
                 '''
 
