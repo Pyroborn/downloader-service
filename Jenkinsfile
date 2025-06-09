@@ -25,25 +25,36 @@ pipeline {
             }
         }
 
-       stage('Dependency-Check') {
+       stage('Dependency Check') {
             steps {
-                sh '''
-                    mkdir -p dependency-check-report dependency-check-data
-                    chown -R jenkins:jenkins dependency-check-data
-                    chmod -R 755 dependency-check-data
+                withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
+                    sh '''
+                        # Prepare directories
+                        mkdir -p /var/lib/jenkins/owasp-data
+                        chown -R jenkins:jenkins /var/lib/jenkins/owasp-data
+                        chmod -R 755 /var/lib/jenkins/owasp-data
 
-                    /opt/owasp/dependency-check/bin/dependency-check.sh \
-                      --data dependency-check-data \
-                      --project downloader-service \
-                      --format HTML \
-                      --format JSON \
-                      --scan $(pwd) \
-                      --out dependency-check-report \
-                      --enableExperimental \
-                      --nvdApiKey $NVD_API_KEY
-                '''
+                        mkdir -p dependency-check-report
+
+                        # Run OWASP Dependency-Check
+                        /opt/owasp/dependency-check/bin/dependency-check.sh \
+                        --data /var/lib/jenkins/owasp-data \
+                        --project downloader-service \
+                        --format HTML \
+                        --format JSON \
+                        --scan $(pwd) \
+                        --out dependency-check-report \
+                        --enableExperimental \
+                        --nvdApiKey "$NVD_API_KEY"
+                    '''
+
+                    // Archive the HTML report if scan succeeds
+                    archiveArtifacts artifacts: 'dependency-check-report/*.html', allowEmptyArchive: true
+                }
             }
-        }
+}
+
+
 
         stage('Test') {
             environment {
