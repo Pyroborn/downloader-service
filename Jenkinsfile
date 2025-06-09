@@ -24,6 +24,39 @@ pipeline {
             }
         }
 
+        stage('OWASP Dependency-Check') {
+            steps {
+                script {
+                // Create report directory
+                sh 'mkdir -p dependency-check-report'
+
+                // Run Dependency-Check CLI
+                sh """
+                    dependency-check.sh \
+                    --project "${JOB_NAME}" \
+                    --format HTML \
+                    --format JSON \
+                    --scan . \
+                    --out dependency-check-report \
+                    --enableExperimental
+                """
+
+                // Archive reports for Jenkins
+                publishHTML(target: [
+                    allowMissing: true,
+                    alwaysLinkToLastBuild: true,
+                    keepAll: true,
+                    reportDir: 'dependency-check-report',
+                    reportFiles: 'dependency-check-report.html',
+                    reportName: 'OWASP Dependency-Check'
+                ])
+
+                archiveArtifacts artifacts: 'dependency-check-report/**', allowEmptyArchive: true
+                }
+            }
+            }
+
+
         stage('Test') {
             environment {
                 // MinIO credentials will be injected from Jenkins credentials
@@ -71,48 +104,6 @@ pipeline {
                 }
             }
         }
-        
-        //stage('Security Scan') {
-        //    steps {
-        //        script {
-        //            // Create directory for Trivy reports
-        //            sh 'mkdir -p security-reports'
-                    
-        //            // Run Trivy scan but continue even if vulnerabilities are found
-        //            sh """
-        //                # Install Trivy if not already installed (only needed first time)
-        //                if ! command -v trivy &> /dev/null; then
-        //                    echo "Trivy not found, installing..."
-        //                    curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /tmp
-        //                    export PATH=$PATH:/tmp
-        //                fi
-                        
-        //                curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl -o /tmp/html.tpl
-        //                # Run Trivy scan and output to HTML and JSON reports
-        //                trivy image --no-progress --exit-code 0 --scanners vuln --format template --template /tmp/html.tpl -o security-reports/trivy-report.html ${IMAGE_NAME}:${BUILD_NUMBER}
-        //                trivy image --no-progress --exit-code 0 --scanners vuln --format json -o security-reports/trivy-report.json ${IMAGE_NAME}:${BUILD_NUMBER}
-        //                echo "Security scan completed - results won't fail the build"
-        //            """
-                    
-        //            // Publish HTML report
-        //            publishHTML(target: [
-        //                allowMissing: true,
-        //                alwaysLinkToLastBuild: true,
-        //                keepAll: true,
-        //                reportDir: 'security-reports',
-        //                reportFiles: 'trivy-report.html',
-        //                reportName: 'Trivy Security Scan'
-        //            ])
-                    
-        //            // Archive security reports
-        //            archiveArtifacts(
-        //                artifacts: 'security-reports/**',
-        //                allowEmptyArchive: true
-        //            )
-        //        }
-        //    }
-        //}
-
 
     stage('Security Scan') {
         steps {
