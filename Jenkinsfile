@@ -116,39 +116,43 @@ pipeline {
         stage('Security Scan') {
             steps {
                 script {
-                def imageName = "${IMAGE_NAME}:${BUILD_NUMBER}"
-                sh 'mkdir -p security-reports'
+                    // Create directory for Trivy reports
+                    sh 'mkdir -p security-reports'
 
-                // Download raw HTML template
-                sh '''
-                    wget -q -O /tmp/html.tpl \
-                    https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl
-                '''
+                    // Download secureCodeBox fancy Trivy HTML template
+                    sh 'curl -sfL https://raw.githubusercontent.com/secureCodeBox/trivy-html-report/main/contrib/fancy.tpl -o /tmp/fancy.tpl'
 
-                // Run Trivy scans: HTML via template and raw JSON
-                sh """
-                    trivy image --no-progress --exit-code 0 --scanners vuln \
-                    --format template --template "@/tmp/html.tpl" \
-                    -o security-reports/trivy-report.html ${imageName}
+                    // Run Trivy scan with the custom HTML template and JSON output
+                    sh """
+                        trivy image --no-progress --exit-code 0 --scanners vuln \
+                        --format template --template "@/tmp/fancy.tpl" \
+                        -o security-reports/trivy-report.html ${IMAGE_NAME}:${BUILD_NUMBER}
 
-                    trivy image --no-progress --exit-code 0 --scanners vuln \
-                    --format json \
-                    -o security-reports/trivy-report.json ${imageName}
-                """
+                        trivy image --no-progress --exit-code 0 --scanners vuln \
+                        --format json -o security-reports/trivy-report.json ${IMAGE_NAME}:${BUILD_NUMBER}
 
-                // Publish & archive reports
-                publishHTML(target: [
-                    allowMissing: true,
-                    alwaysLinkToLastBuild: true,
-                    keepAll: true,
-                    reportDir: 'security-reports',
-                    reportFiles: 'trivy-report.html',
-                    reportName: 'Trivy Security Scan'
-                ])
-                archiveArtifacts artifacts: 'security-reports/**', allowEmptyArchive: true
+                        echo "Security scan completed - results won't fail the build"
+                    """
+
+                    // Publish HTML report in Jenkins
+                    publishHTML(target: [
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'security-reports',
+                        reportFiles: 'trivy-report.html',
+                        reportName: 'Trivy Security Scan'
+                    ])
+
+                    // Archive security reports (HTML + JSON)
+                    archiveArtifacts(
+                        artifacts: 'security-reports/**',
+                        allowEmptyArchive: true
+                    )
                 }
             }
-            }
+        }
+
 
 
 
