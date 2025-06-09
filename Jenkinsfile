@@ -26,35 +26,36 @@ pipeline {
 
         stage('OWASP Dependency-Check') {
             steps {
-                script {
-                // Create report directory
-                sh 'mkdir -p dependency-check-report'
-
-                // Run Dependency-Check CLI
-                sh """
-                    dependency-check.sh \
-                    --project "${JOB_NAME}" \
+                sh '''
+                mkdir -p dependency-check-report
+                docker run --rm \
+                    -v "$(pwd):/src" \
+                    -v "$(pwd)/dependency-check-report:/report" \
+                    owasp/dependency-check:12.1.0 \
+                    --project downloader-service \
+                    --scan /src \
                     --format HTML \
                     --format JSON \
-                    --scan . \
-                    --out dependency-check-report \
+                    --out /report \
                     --enableExperimental
-                """
 
-                // Archive reports for Jenkins
+                echo "Dependency-Check scan complete (non-failing build)"
+                '''
+
+                // Display HTML report in Jenkins
                 publishHTML(target: [
-                    allowMissing: true,
-                    alwaysLinkToLastBuild: true,
-                    keepAll: true,
-                    reportDir: 'dependency-check-report',
-                    reportFiles: 'dependency-check-report.html',
-                    reportName: 'OWASP Dependency-Check'
+                allowMissing: true,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: 'dependency-check-report',
+                reportFiles: 'dependency-check-report.html',
+                reportName: 'OWASP Dependency Check'
                 ])
 
                 archiveArtifacts artifacts: 'dependency-check-report/**', allowEmptyArchive: true
-                }
             }
             }
+
 
 
         stage('Test') {
