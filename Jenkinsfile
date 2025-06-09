@@ -28,23 +28,19 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        # Create folders for reports and data storage
                         mkdir -p dependency-check-report dependency-check-data
+                        chown -R jenkins:jenkins dependency-check-data
+                        chmod -R 755 dependency-check-data
 
-                        # Set env var to specify the data directory (H2 DB files)
-                        export DEPENDENCY_CHECK_DATA=$PWD/dependency-check-data
-
-                        # Run dependency-check scan
                         /opt/owasp/dependency-check/bin/dependency-check.sh \
+                            --data $(pwd)/dependency-check-data \
                             --project downloader-service \
                             --format HTML \
                             --format JSON \
-                            --scan $PWD \
+                            --scan $(pwd) \
                             --out dependency-check-report \
                             --enableExperimental
                     '''
-
-                    // Publish the HTML report
                     publishHTML([
                         allowMissing: false,
                         alwaysLinkToLastBuild: true,
@@ -54,15 +50,10 @@ pipeline {
                         reportName: 'OWASP Dependency Check Report'
                     ])
 
-                    // Archive all generated report files as artifacts
                     archiveArtifacts artifacts: 'dependency-check-report/**/*.*', allowEmptyArchive: false
                 }
             }
         }
-
-
-
-
 
         stage('Test') {
             environment {
