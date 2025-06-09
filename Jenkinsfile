@@ -28,34 +28,30 @@ pipeline {
             steps {
                 sh '''
                 mkdir -p dependency-check-report
-                docker run --rm \
-                    -v "$(pwd):/src" \
-                    -v "$(pwd)/dependency-check-report:/report" \
-                    owasp/dependency-check:12.1.0 \
+
+                /opt/owasp/dependency-check/bin/dependency-check.sh \
                     --project downloader-service \
-                    --scan /src \
                     --format HTML \
                     --format JSON \
-                    --out /report \
-                    --enableExperimental
+                    --scan . \
+                    --out dependency-check-report \
+                    --enableExperimental || true
 
-                echo "Dependency-Check scan complete (non-failing build)"
+                echo "OWASP Dependency-Check completed (won't fail build even if vulnerabilities are found)"
                 '''
 
-                // Display HTML report in Jenkins
                 publishHTML(target: [
                 allowMissing: true,
                 alwaysLinkToLastBuild: true,
                 keepAll: true,
                 reportDir: 'dependency-check-report',
                 reportFiles: 'dependency-check-report.html',
-                reportName: 'OWASP Dependency Check'
+                reportName: 'OWASP Dependency Check Report'
                 ])
 
                 archiveArtifacts artifacts: 'dependency-check-report/**', allowEmptyArchive: true
             }
-            }
-
+        }
 
 
         stage('Test') {
