@@ -24,42 +24,42 @@ pipeline {
             }
         }
 
-        stage('OWASP Dependency-Check') {
+       stage('OWASP Dependency-Check') {
             steps {
-                sh '''
-                mkdir -p dependency-check-report
+                script {
+                    sh '''
+                        # Create folders for reports and data storage
+                        mkdir -p dependency-check-report dependency-check-data
 
-                echo "Workspace files to scan:"
-                find . -type f
+                        # Set env var to specify the data directory (H2 DB files)
+                        export DEPENDENCY_CHECK_DATA=$PWD/dependency-check-data
 
-                /opt/owasp/dependency-check/bin/dependency-check.sh \
-                    --project downloader-service \
-                    --format HTML \
-                    --format JSON \
-                    --scan . \
-                    --out dependency-check-report \
-                    --enableExperimental \
-                    -l dependency-check.log || true
+                        # Run dependency-check scan
+                        /opt/owasp/dependency-check/bin/dependency-check.sh \
+                            --project downloader-service \
+                            --format HTML \
+                            --format JSON \
+                            --scan $PWD \
+                            --out dependency-check-report \
+                            --enableExperimental
+                    '''
 
-                echo "Generated files:"
-                find dependency-check-report || true
+                    // Publish the HTML report
+                    publishHTML([
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'dependency-check-report',
+                        reportFiles: 'dependency-check-report.html',
+                        reportName: 'OWASP Dependency Check Report'
+                    ])
 
-                echo "Dependency-Check log:"
-                cat dependency-check.log || true
-                '''
-
-                publishHTML(target: [
-                allowMissing: true,
-                alwaysLinkToLastBuild: true,
-                keepAll: true,
-                reportDir: 'dependency-check-report',
-                reportFiles: 'dependency-check-report.html',
-                reportName: 'OWASP Dependency Check Report'
-                ])
-
-                archiveArtifacts artifacts: 'dependency-check-report/**/*.*', allowEmptyArchive: true
+                    // Archive all generated report files as artifacts
+                    archiveArtifacts artifacts: 'dependency-check-report/**/*.*', allowEmptyArchive: false
+                }
             }
-            }
+        }
+
 
 
 
