@@ -29,6 +29,9 @@ pipeline {
                 sh '''
                 mkdir -p dependency-check-report
 
+                echo "Workspace files to scan:"
+                find . -type f
+
                 /opt/owasp/dependency-check/bin/dependency-check.sh \
                     --project downloader-service \
                     --format HTML \
@@ -36,10 +39,13 @@ pipeline {
                     --scan . \
                     --out dependency-check-report \
                     --enableExperimental \
-                    --verbose || true
+                    -l dependency-check.log || true
 
                 echo "Generated files:"
                 find dependency-check-report || true
+
+                echo "Dependency-Check log:"
+                cat dependency-check.log || true
                 '''
 
                 publishHTML(target: [
@@ -54,6 +60,7 @@ pipeline {
                 archiveArtifacts artifacts: 'dependency-check-report/**/*.*', allowEmptyArchive: true
             }
             }
+
 
 
 
