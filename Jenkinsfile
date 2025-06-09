@@ -55,6 +55,12 @@ pipeline {
             }
         }
 
+
+
+
+
+
+
         stage('Test') {
             environment {
                 // MinIO credentials will be injected from Jenkins credentials
