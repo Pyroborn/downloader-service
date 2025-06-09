@@ -121,23 +121,16 @@ pipeline {
                 // Create report directory
                 sh 'mkdir -p security-reports'
 
-                // Download HTML template for nice Trivy output (if not cached)
-                sh '''
-                    if [ ! -f /tmp/html.tpl ]; then
-                        wget -q -O /tmp/html.tpl https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl
-                    fi
-                '''
-
-                // Run Trivy scans
                 sh """
-                    trivy image --no-progress --exit-code 0 --scanners vuln --format template --template /tmp/html.tpl \
-                    -o security-reports/trivy-report.html ${imageName}
+                    trivy image --no-progress --exit-code 0 --scanners vuln \
+                    --format html -o security-reports/trivy-report.html ${imageName}
 
-                    trivy image --no-progress --exit-code 0 --scanners vuln --format json \
-                    -o security-reports/trivy-report.json ${imageName}
+                    trivy image --no-progress --exit-code 0 --scanners vuln \
+                    --format json -o security-reports/trivy-report.json ${imageName}
+
+                    echo "Security scan completed - results won't fail the build"
                 """
 
-                // Publish HTML report
                 publishHTML(target: [
                     allowMissing: true,
                     alwaysLinkToLastBuild: true,
