@@ -10,6 +10,7 @@ pipeline {
         DOCKER_CONFIG = "${WORKSPACE}/.docker"
         GIT_REPO_URL = 'https://github.com/Pyroborn/k8s-argoCD.git'
         GIT_CREDENTIALS_ID = 'github-credentials'
+        NVD_API_KEY = credentials('NVD_API_KEY')
     }
 
     stages {
@@ -24,42 +25,25 @@ pipeline {
             }
         }
 
-       stage('OWASP Dependency-Check') {
+       stage('Dependency-Check') {
             steps {
-                script {
-                    sh '''
-                        mkdir -p dependency-check-report dependency-check-data
-                        chown -R jenkins:jenkins dependency-check-data
-                        chmod -R 755 dependency-check-data
+                sh '''
+                    mkdir -p dependency-check-report dependency-check-data
+                    chown -R jenkins:jenkins dependency-check-data
+                    chmod -R 755 dependency-check-data
 
-                        /opt/owasp/dependency-check/bin/dependency-check.sh \
-                            --data $(pwd)/dependency-check-data \
-                            --project downloader-service \
-                            --format HTML \
-                            --format JSON \
-                            --scan $(pwd) \
-                            --out dependency-check-report \
-                            --enableExperimental
-                    '''
-                    publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: 'dependency-check-report',
-                        reportFiles: 'dependency-check-report.html',
-                        reportName: 'OWASP Dependency Check Report'
-                    ])
-
-                    archiveArtifacts artifacts: 'dependency-check-report/**/*.*', allowEmptyArchive: false
-                }
+                    /opt/owasp/dependency-check/bin/dependency-check.sh \
+                      --data dependency-check-data \
+                      --project downloader-service \
+                      --format HTML \
+                      --format JSON \
+                      --scan $(pwd) \
+                      --out dependency-check-report \
+                      --enableExperimental \
+                      --nvdApiKey $NVD_API_KEY
+                '''
             }
         }
-
-
-
-
-
-
 
         stage('Test') {
             environment {
