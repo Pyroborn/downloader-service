@@ -35,9 +35,11 @@ pipeline {
                     --format JSON \
                     --scan . \
                     --out dependency-check-report \
-                    --enableExperimental || true
+                    --enableExperimental \
+                    --verbose || true
 
-                echo "OWASP Dependency-Check completed (won't fail build even if vulnerabilities are found)"
+                echo "Generated files:"
+                find dependency-check-report || true
                 '''
 
                 publishHTML(target: [
@@ -49,9 +51,10 @@ pipeline {
                 reportName: 'OWASP Dependency Check Report'
                 ])
 
-                archiveArtifacts artifacts: 'dependency-check-report/**', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'dependency-check-report/**/*.*', allowEmptyArchive: true
             }
-        }
+            }
+
 
 
         stage('Test') {
