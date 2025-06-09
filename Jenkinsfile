@@ -117,20 +117,26 @@ pipeline {
             steps {
                 script {
                 def imageName = "${IMAGE_NAME}:${BUILD_NUMBER}"
-
-                // Create report directory
                 sh 'mkdir -p security-reports'
 
+                // Download raw HTML template
+                sh '''
+                    wget -q -O /tmp/html.tpl \
+                    https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl
+                '''
+
+                // Run Trivy scans: HTML via template and raw JSON
                 sh """
                     trivy image --no-progress --exit-code 0 --scanners vuln \
-                    --format html -o security-reports/trivy-report.html ${imageName}
+                    --format template --template "@/tmp/html.tpl" \
+                    -o security-reports/trivy-report.html ${imageName}
 
                     trivy image --no-progress --exit-code 0 --scanners vuln \
-                    --format json -o security-reports/trivy-report.json ${imageName}
-
-                    echo "Security scan completed - results won't fail the build"
+                    --format json \
+                    -o security-reports/trivy-report.json ${imageName}
                 """
 
+                // Publish & archive reports
                 publishHTML(target: [
                     allowMissing: true,
                     alwaysLinkToLastBuild: true,
@@ -139,12 +145,11 @@ pipeline {
                     reportFiles: 'trivy-report.html',
                     reportName: 'Trivy Security Scan'
                 ])
-
-                // Archive all reports (e.g., for download or later use)
                 archiveArtifacts artifacts: 'security-reports/**', allowEmptyArchive: true
                 }
             }
             }
+
 
 
     stage('Push to DockerHub') {
