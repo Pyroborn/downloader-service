@@ -73,7 +73,10 @@ pipeline {
                             echo "Starting SonarCloud analysis..."
                             echo "Project: Pyroborn_downloader-service | Organization: pyroborn"
                             
-                            # Run SonarScanner with minimal output
+                            # Set memory options for SonarScanner to prevent bridge server issues
+                            export SONAR_SCANNER_OPTS="-Xmx2048m -XX:MaxMetaspaceSize=512m"
+                            
+                            # Run SonarScanner with memory optimizations
                             ${scannerHome}/bin/sonar-scanner \
                                 -Dsonar.projectKey=Pyroborn_downloader-service \
                                 -Dsonar.organization=pyroborn \
@@ -82,9 +85,11 @@ pipeline {
                                 -Dsonar.sources=src \
                                 -Dsonar.tests=src/tests \
                                 -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
-                                -Dsonar.coverage.exclusions="**/*.test.js,**/tests/**,**/node_modules/**,**/coverage/**,**/data/**" \
+                                -Dsonar.coverage.exclusions="**/*.test.js,**/tests/**,**/node_modules/**,**/coverage/**" \
                                 -Dsonar.cpd.exclusions="**/*.test.js,**/tests/**,**/node_modules/**" \
-                                -Dsonar.exclusions="**/node_modules/**,**/coverage/**,**/data/**,**/*.min.js" \
+                                -Dsonar.exclusions="**/node_modules/**,**/coverage/**,**/*.min.js,**/dist/**,**/build/**" \
+                                -Dsonar.javascript.exclusions="**/node_modules/**,**/coverage/**,**/*.min.js" \
+                                -Dsonar.typescript.exclusions="**/node_modules/**,**/coverage/**" \
                                 -Dsonar.projectVersion=${BUILD_NUMBER} \
                                 -Dsonar.buildString=${BUILD_NUMBER} \
                                 -Dsonar.log.level=WARN \
