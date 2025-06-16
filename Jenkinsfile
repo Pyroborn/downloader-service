@@ -90,7 +90,8 @@ pipeline {
                                 grep -E "(Total time:|EXECUTION SUCCESS)" sonar-output.log | tail -2
                             else
                                 echo "❌ Analysis failed - check logs"
-                                tail -10 sonar-output.log
+                                echo "Last 15 lines of output:"
+                                tail -15 sonar-output.log
                                 exit 1
                             fi
                         """
