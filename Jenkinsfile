@@ -66,40 +66,15 @@ pipeline {
         stage('SonarCloud Analysis') {
             steps {
                 script {
-                    echo "=== SonarCloud Analysis Debug ==="
-                    echo "Current directory: ${pwd()}"
-                    echo "Workspace: ${env.WORKSPACE}"
-                    
-                    // List files to verify structure
-                    sh 'ls -la'
-                    sh 'ls -la src/ || echo "No src directory"'
-                    sh 'ls -la src/tests/ || echo "No src/tests directory"'
-                    sh 'ls -la coverage/ || echo "No coverage directory"'
-                    
-                    echo "=== Starting SonarCloud Analysis ==="
-                    
-                    // Use Jenkins SonarQube Scanner tool instead of direct sonar-scanner call
-                    withSonarQubeEnv('SonarCloud') {
-                        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                            sh '''
-                                # Check if sonar-scanner is available in Jenkins tools
-                                if command -v sonar-scanner >/dev/null 2>&1; then
-                                    echo "Using sonar-scanner from PATH"
-                                    SCANNER_CMD="sonar-scanner"
-                                elif [ -f "${SONAR_SCANNER_HOME}/bin/sonar-scanner" ]; then
-                                    echo "Using sonar-scanner from SONAR_SCANNER_HOME: ${SONAR_SCANNER_HOME}"
-                                    SCANNER_CMD="${SONAR_SCANNER_HOME}/bin/sonar-scanner"
-                                else
-                                    echo "Installing SonarScanner locally..."
-                                    # Download and install SonarScanner locally
-                                    wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
-                                    unzip -q sonar-scanner-cli-4.8.0.2856-linux.zip
-                                    SCANNER_CMD="./sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner"
-                                fi
-                                
-                                echo "Using scanner: $SCANNER_CMD"
-                                
-                                $SCANNER_CMD \
+                    // Run SonarCloud analysis using Jenkins tool (same as user-service)
+                    withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
+                        def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+                        sh """
+                            echo "Starting SonarCloud analysis..."
+                            echo "Project: Pyroborn_downloader-service | Organization: pyroborn"
+                            
+                            # Run SonarScanner with minimal output
+                            ${scannerHome}/bin/sonar-scanner \
                                 -Dsonar.projectKey=Pyroborn_downloader-service \
                                 -Dsonar.organization=pyroborn \
                                 -Dsonar.host.url=https://sonarcloud.io \
@@ -107,24 +82,46 @@ pipeline {
                                 -Dsonar.sources=src \
                                 -Dsonar.tests=src/tests \
                                 -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
-                                -Dsonar.coverage.exclusions=**/*.test.js,**/tests/**,**/node_modules/**,**/coverage/**,**/dist/**,**/build/** \
-                                -Dsonar.exclusions=**/node_modules/**,**/coverage/**,**/dist/**,**/build/**,**/*.min.js \
-                                -Dsonar.test.exclusions=**/node_modules/**,**/coverage/**,**/dist/**,**/build/** \
+                                -Dsonar.coverage.exclusions="**/*.test.js,**/tests/**,**/node_modules/**,**/coverage/**" \
+                                -Dsonar.cpd.exclusions="**/*.test.js,**/tests/**,**/node_modules/**" \
+                                -Dsonar.exclusions="**/node_modules/**,**/coverage/**,**/*.min.js" \
                                 -Dsonar.projectVersion=${BUILD_NUMBER} \
-                                -Dsonar.buildString=${BUILD_TAG}
-                            '''
-                        }
+                                -Dsonar.buildString=${BUILD_NUMBER} \
+                                -Dsonar.log.level=WARN \
+                                -Dsonar.verbose=false > sonar-output.log 2>&1
+                            
+                            # Show only summary
+                            echo "=== SonarCloud Analysis Complete ==="
+                            if grep -q "EXECUTION SUCCESS" sonar-output.log; then
+                                echo "✅ Analysis completed successfully"
+                                # Extract and show key metrics
+                                grep -E "(Total time:|EXECUTION SUCCESS)" sonar-output.log | tail -2
+                            else
+                                echo "❌ Analysis failed - check logs"
+                                tail -10 sonar-output.log
+                                exit 1
+                            fi
+                        """
                     }
-                    
-                    echo "=== SonarCloud Analysis Completed ==="
                 }
             }
             post {
                 always {
+                    // Archive SonarCloud reports and logs
                     script {
-                        // Archive SonarQube reports if they exist
-                        sh 'find . -name "sonar-report.json" -o -name ".scannerwork" | head -10 || echo "No SonarQube reports found"'
+                        if (fileExists('.scannerwork/report-task.txt')) {
+                            archiveArtifacts artifacts: '.scannerwork/report-task.txt', allowEmptyArchive: true
+                        }
+                        if (fileExists('sonar-output.log')) {
+                            archiveArtifacts artifacts: 'sonar-output.log', allowEmptyArchive: true
+                        }
                     }
+                }
+                failure {
+                    echo 'SonarCloud analysis failed!'
+                }
+                success {
+                    echo 'SonarCloud analysis completed successfully!'
                 }
             }
         }
