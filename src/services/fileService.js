@@ -6,16 +6,15 @@ const { metrics } = require('../config/metrics');
 class FileService {
     constructor() {
         this.bucket = process.env.MINIO_BUCKET;
-        // Initialize bucket on service startup
+        // Initialize bucket on startup
         this.initBucket().catch(err => {
             console.error('Failed to initialize bucket:', err);
         });
     }
 
-    // Check if bucket exists and create it if it doesn't
+    // Check bucket existence or create if needed
     async initBucket() {
         try {
-            // Try to check if bucket exists
             const headBucketCommand = new HeadBucketCommand({
                 Bucket: this.bucket
             });
@@ -24,7 +23,6 @@ class FileService {
                 await s3Client.send(headBucketCommand);
                 console.log(`Bucket '${this.bucket}' already exists.`);
             } catch (error) {
-                // If bucket doesn't exist, create it
                 if (error.name === 'NotFound' || error.name === 'NoSuchBucket' || error.$metadata?.httpStatusCode === 404) {
                     console.log(`Bucket '${this.bucket}' does not exist. Creating it now...`);
                     const createBucketCommand = new CreateBucketCommand({
@@ -56,9 +54,8 @@ class FileService {
                     lastModified: item.LastModified
                 })) || [];
 
-                // If user is not admin, filter files to show only their own
+                // Filter files by user ID for non-admin users
                 if (user && user.role !== 'admin') {
-                    // Use userId property consistently (not id)
                     const userId = user.userId || user.id;
                     
                     if (!userId) {
@@ -67,7 +64,6 @@ class FileService {
                     }
                     
                     const filteredFiles = files.filter(file => file.key.startsWith(`${userId}/`));
-                    // Reduced logging
                     if (filteredFiles.length === 0 && files.length > 0) {
                         console.log(`No files found for user ID ${userId} out of ${files.length} total files`);
                     }
@@ -77,12 +73,10 @@ class FileService {
                 return files;
             } catch (bucketError) {
                 console.error('Error listing files from bucket:', bucketError);
-                // Return empty array if bucket doesn't exist or other errors
                 return [];
             }
         } catch (error) {
             console.error('Error in listFiles function:', error);
-            // Return empty array instead of throwing error
             return [];
         }
     }
@@ -112,11 +106,9 @@ class FileService {
     //}
 
     async uploadFile(file, user) {
-        // Increment the active uploads gauge before starting
         metrics.activeUploadsGauge.inc();
         
         try {
-            // Prefix the key with user ID for organization and access control
             const key = `${user.id}/${Date.now()}-${file.originalname}`;
             
             const upload = new Upload({
@@ -155,12 +147,11 @@ class FileService {
             console.error('Error uploading file:', error);
             throw new Error('Failed to upload file');
         } finally {
-            // Always decrement the active uploads gauge when finished
             metrics.activeUploadsGauge.dec();
         }
     }    
 
-    // Add a method to check file access
+    // Adding a method to check file access
     async checkFileAccess(key, userId, role) {
         try {
             // Admin has access to all files
@@ -181,11 +172,10 @@ class FileService {
     }
 
     async downloadFile(key, user) {
-        // Increment the active downloads gauge before starting
         metrics.activeDownloadsGauge.inc();
         
         try {
-            // Check if user has access to this file
+            // Checking if user has access to this file
             const canAccess = await this.checkFileAccess(key, user.userId, user.role);
             if (!canAccess) {
                 throw new Error('Access denied');
@@ -198,7 +188,7 @@ class FileService {
 
             const response = await s3Client.send(command);
             
-            // Track metrics if user is provided
+            // Tracking metrics if user is provided
             if (user && user.userId) {
                 metrics.downloadRequestsTotal.inc({ status: 'success', userId: user.userId });
                 
@@ -221,14 +211,13 @@ class FileService {
             }
             throw new Error('Failed to download file');
         } finally {
-            // Always decrement the active downloads gauge when finished
             metrics.activeDownloadsGauge.dec();
         }
     }
 
     async deleteFile(key, user) {
         try {
-            // Check if user has access to delete this file
+            // Checking if user has access to delete this file
             const canDelete = await this.checkFileAccess(key, user.userId, user.role);
             if (!canDelete) {
                 throw new Error('Access denied');

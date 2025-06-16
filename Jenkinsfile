@@ -10,7 +10,7 @@ pipeline {
         DOCKER_CONFIG = "${WORKSPACE}/.docker"
         GIT_REPO_URL = 'https://github.com/Pyroborn/k8s-argoCD.git'
         GIT_CREDENTIALS_ID = 'github-credentials'
-        NVD_API_KEY = credentials('NVD_API_KEY')
+        SONAR_TOKEN = credentials('SONAR_TOKEN')
     }
 
     stages {
@@ -24,37 +24,6 @@ pipeline {
                 sh 'npm ci'
             }
         }
-
-       stage('Dependency Check') {
-            steps {
-                withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
-                    sh '''
-                        # Prepare directories
-                        mkdir -p /var/lib/jenkins/owasp-data
-                        chown -R jenkins:jenkins /var/lib/jenkins/owasp-data
-                        chmod -R 755 /var/lib/jenkins/owasp-data
-
-                        mkdir -p dependency-check-report
-
-                        # Run OWASP Dependency-Check
-                        /opt/owasp/dependency-check/bin/dependency-check.sh \
-                        --data /var/lib/jenkins/owasp-data \
-                        --project downloader-service \
-                        --format HTML \
-                        --format JSON \
-                        --scan $(pwd) \
-                        --out dependency-check-report \
-                        --enableExperimental \
-                        --nvdApiKey "$NVD_API_KEY"
-                    '''
-
-                    // Archive the HTML report if scan succeeds
-                    archiveArtifacts artifacts: 'dependency-check-report/*.html', allowEmptyArchive: true
-                }
-            }
-}
-
-
 
         stage('Test') {
             environment {
@@ -93,6 +62,69 @@ pipeline {
                 )
             }
         }
+
+        stage('SonarCloud Analysis') {
+            steps {
+                script {
+                    // Run SonarCloud analysis using Jenkins tool
+                    withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
+                        def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+                        sh """
+                            echo "Starting SonarCloud analysis..."
+                            echo "Project: Pyroborn_downloader-service | Organization: pyroborn"
+                            
+                            # Run SonarScanner with minimal output
+                            ${scannerHome}/bin/sonar-scanner \
+                                -Dsonar.projectKey=Pyroborn_downloader-service \
+                                -Dsonar.organization=pyroborn \
+                                -Dsonar.host.url=https://sonarcloud.io \
+                                -Dsonar.login=${SONAR_TOKEN} \
+                                -Dsonar.sources=. \
+                                -Dsonar.tests=. \
+                                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+                                -Dsonar.coverage.exclusions="**/*.test.js,**/tests/**,**/node_modules/**,**/coverage/**,**/data/**" \
+                                -Dsonar.cpd.exclusions="**/*.test.js,**/tests/**,**/node_modules/**" \
+                                -Dsonar.exclusions="**/node_modules/**,**/coverage/**,**/data/**,**/*.min.js" \
+                                -Dsonar.projectVersion=${BUILD_NUMBER} \
+                                -Dsonar.buildString=${BUILD_NUMBER} \
+                                -Dsonar.log.level=WARN \
+                                -Dsonar.verbose=false > sonar-output.log 2>&1
+                            
+                            # Show only summary
+                            echo "=== SonarCloud Analysis Complete ==="
+                            if grep -q "EXECUTION SUCCESS" sonar-output.log; then
+                                echo "✅ Analysis completed successfully"
+                                # Extract and show key metrics
+                                grep -E "(Total time:|EXECUTION SUCCESS)" sonar-output.log | tail -2
+                            else
+                                echo "❌ Analysis failed - check logs"
+                                tail -10 sonar-output.log
+                                exit 1
+                            fi
+                        """
+                    }
+                }
+            }
+            post {
+                always {
+                    // Archive SonarCloud reports and logs
+                    script {
+                        if (fileExists('.scannerwork/report-task.txt')) {
+                            archiveArtifacts artifacts: '.scannerwork/report-task.txt', allowEmptyArchive: true
+                        }
+                        if (fileExists('sonar-output.log')) {
+                            archiveArtifacts artifacts: 'sonar-output.log', allowEmptyArchive: true
+                        }
+                    }
+                }
+                failure {
+                    echo 'SonarCloud analysis failed!'
+                }
+                success {
+                    echo 'SonarCloud analysis completed successfully!'
+                }
+            }
+        }
         
         stage('Build Image') {
             steps {
@@ -104,7 +136,7 @@ pipeline {
             }
         }
 
-    stage('Security Scan') {
+    stage('Trivy Container Security Scan') {
         steps {
             script {
             def imageName = "${IMAGE_NAME}:${BUILD_NUMBER}"
@@ -205,17 +237,13 @@ pipeline {
                                     echo "Found deployment file. Current content:"
                                     cat deployments/downloader-service/deployment.yaml
                                     
-                                    # Update image tag with proper regex - target only the line after 'name: downloader-service'
                                     echo "Updating image tag to ${IMAGE_NAME}:${BUILD_NUMBER}"
                                     
-                                    # First check if we can find the container section
                                     if grep -A 5 "name: downloader-service" deployments/downloader-service/deployment.yaml | grep -q "image:"; then
                                         echo "Found image line near 'name: downloader-service', updating it..."
-                                        # Use sed to maintain exact indentation (8 spaces/2 tabs)
                                         sed -i "s|^\\(        image: ${IMAGE_NAME}:\\).*|\\1${BUILD_NUMBER}|g" deployments/downloader-service/deployment.yaml
                                     else
                                         echo "WARNING: Could not find image line near 'name: downloader-service'. Please check the deployment file structure."
-                                        # Insert image line with proper indentation (8 spaces) after the name line
                                         sed -i "/^        - name: downloader-service/ a\\        image: ${IMAGE_NAME}:${BUILD_NUMBER}" deployments/downloader-service/deployment.yaml
                                     fi
                                     
@@ -239,13 +267,187 @@ pipeline {
                                     fi
                                 else
                                     echo "ERROR: Deployment file not found at deployments/downloader-service/deployment.yaml"
-                                    # List directory structure to help diagnose
                                     find . -type f -name "*.yaml" | sort
                                     exit 1
                                 fi
                             """
                         }
                     }
+                }
+            }
+        }
+    
+    stage('Checkov Infrastructure Security Scan') {
+            steps {
+                script {
+                    // Create reports directory
+                    sh 'mkdir -p security-reports'
+                    
+                    // Run Checkov scan on GitOps repository
+                    sh '''
+                        # Add pipx installation path to PATH (fix Jenkins PATH warning)
+                        export PATH="$PATH:/var/lib/jenkins/.local/bin"
+                        
+                        echo "Starting Checkov Infrastructure Security Scan..."
+                        
+                        # Check if GitOps repo directory exists from previous stage
+                        if [ -d "gitops-repo" ]; then
+                            echo "Found GitOps repository, scanning Kubernetes manifests..."
+                            
+                            # Look for deployments directory structure
+                            if [ -d "gitops-repo/deployments" ]; then
+                                echo "Scanning deployments directory..."
+                                
+                                # Run Checkov scan and suppress all output
+                                checkov -d gitops-repo/deployments/ \
+                                    --framework kubernetes \
+                                    --output json \
+                                    --output-file-path security-reports/ \
+                                    --soft-fail \
+                                    --quiet > /dev/null 2>&1 || echo "Checkov scan completed"
+                                
+                            elif [ -d "gitops-repo/k8s" ]; then
+                                echo "Scanning k8s directory..."
+                                
+                                # Run Checkov scan and suppress all output
+                                checkov -d gitops-repo/k8s/ \
+                                    --framework kubernetes \
+                                    --output json \
+                                    --output-file-path security-reports/ \
+                                    --soft-fail \
+                                    --quiet > /dev/null 2>&1 || echo "Checkov scan completed"
+                                    
+                            else
+                                echo "Scanning entire GitOps repository..."
+                                
+                                # Run Checkov scan and suppress all output
+                                checkov -d gitops-repo/ \
+                                    --framework kubernetes \
+                                    --output json \
+                                    --output-file-path security-reports/ \
+                                    --soft-fail \
+                                    --quiet > /dev/null 2>&1 || echo "Checkov scan completed"
+                            fi
+                            
+                            # Look for JSON report (Checkov might name it differently)
+                            if [ -f "security-reports/results_json.json" ]; then
+                                mv security-reports/results_json.json security-reports/checkov-report.json
+                            fi
+                            
+                            # Show brief summary
+                            if [ -f "security-reports/checkov-report.json" ]; then
+                                echo "=== Checkov Summary ==="
+                                python3 << 'EOF'
+import json
+try:
+    with open('security-reports/checkov-report.json', 'r') as f:
+        data = json.load(f)
+    
+    # Get summary
+    summary = data.get('summary', {})
+    passed = summary.get('passed', 0)
+    failed = summary.get('failed', 0)
+    skipped = summary.get('skipped', 0)
+    
+    print(f'📊 Total: {passed + failed + skipped} checks | ✅ Passed: {passed} | ❌ Failed: {failed} | ⏭️ Skipped: {skipped}')
+    
+    if failed > 0:
+        print(f'🚨 Found {failed} security issues - generating readable report...')
+        
+        # Generate readable text report
+        failed_checks = data.get('results', {}).get('failed_checks', [])
+        
+        with open('security-reports/checkov-readable-report.txt', 'w') as report:
+            report.write("CHECKOV KUBERNETES SECURITY SCAN REPORT\\n")
+            report.write("=" * 50 + "\\n\\n")
+            report.write(f"Summary: {passed} passed, {failed} failed, {skipped} skipped\\n")
+            report.write(f"Total checks: {passed + failed + skipped}\\n")
+            report.write(f"Checkov version: {data.get('checkov_version', 'Unknown')}\\n\\n")
+            
+            report.write("FAILED SECURITY CHECKS:\\n")
+            report.write("-" * 30 + "\\n\\n")
+            
+            for i, check in enumerate(failed_checks, 1):
+                check_id = check.get('check_id', 'Unknown')
+                check_name = check.get('check_name', 'Unknown Check')
+                file_path = check.get('file_path', 'Unknown File')
+                resource = check.get('resource', 'Unknown Resource')
+                
+                # Get line numbers and code context
+                file_line_range = check.get('file_line_range', [])
+                code_block = check.get('code_block', [])
+                severity = check.get('severity', 'UNKNOWN')
+                bc_check_id = check.get('bc_check_id', '')
+                guideline = check.get('guideline', '')
+                
+                report.write(f"{i}. {check_id}: {check_name}\\n")
+                report.write(f"   File: {file_path}")
+                
+                # Add line numbers if available
+                if file_line_range and len(file_line_range) >= 2:
+                    start_line = file_line_range[0]
+                    end_line = file_line_range[1]
+                    if start_line == end_line:
+                        report.write(f" (line {start_line})")
+                    else:
+                        report.write(f" (lines {start_line}-{end_line})")
+                report.write("\\n")
+                
+                report.write(f"   Resource: {resource}\\n")
+                
+                # Add severity if available
+                if severity and severity != 'UNKNOWN':
+                    report.write(f"   Severity: {severity}\\n")
+                
+                # Add code context if available
+                if code_block and len(code_block) > 0:
+                    report.write("   Code Context:\\n")
+                    for line_num, line_content in code_block:
+                        if isinstance(line_content, str) and line_content.strip():
+                            report.write(f"     {line_num}: {line_content.rstrip()}\\n")
+                
+                # Add guideline/fix if available
+                if guideline and guideline.strip():
+                    report.write(f"   Fix: {guideline}\\n")
+                elif bc_check_id:
+                    report.write(f"   Check ID: {bc_check_id}\\n")
+                
+                report.write("\\n")
+        
+        print(f'📄 Readable report generated: security-reports/checkov-readable-report.txt')
+        print('💡 Check archived files for complete details')
+        
+    else:
+        print('🎉 No security issues found! All checks passed.')
+        
+except Exception as e:
+    print(f'Could not parse summary: {e}')
+    print('Check the archived JSON report for details')
+EOF
+                            else
+                                echo "No Checkov report generated - check archived files"
+                            fi
+                            
+                        else
+                            echo "WARNING: GitOps repository not found"
+                            echo '{"summary": {"failed": 0, "passed": 0, "skipped": 0}, "message": "GitOps repository not found"}' > security-reports/checkov-report.json
+                        fi
+                    '''
+                }
+            }
+            post {
+                always {
+                    // Archive Checkov reports
+                    archiveArtifacts(
+                        artifacts: 'security-reports/checkov-*',
+                        allowEmptyArchive: true
+                    )
+                }
+                failure {
+                    echo 'Checkov infrastructure security scan encountered issues!'
+                }
+                success {
+                    echo 'Checkov infrastructure security scan completed successfully!'
                 }
             }
         }

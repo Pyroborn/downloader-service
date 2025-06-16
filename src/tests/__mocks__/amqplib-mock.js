@@ -1,9 +1,9 @@
-// Mock RabbitMQ channel functions
+// RabbitMQ channel mock
 const mockChannel = {
   assertQueue: jest.fn().mockResolvedValue({ queue: 'mock-queue', messageCount: 0 }),
   sendToQueue: jest.fn().mockResolvedValue(true),
   consume: jest.fn((queue, callback) => {
-    // Store the callback for tests to trigger message consumption
+    // Store callback for test-triggered consumption
     mockChannel.consumeCallback = callback;
     return { consumerTag: 'mock-consumer' };
   }),
@@ -13,13 +13,13 @@ const mockChannel = {
   close: jest.fn().mockResolvedValue(undefined)
 };
 
-// Mock RabbitMQ connection
+// RabbitMQ connection mock
 const mockConnection = {
   createChannel: jest.fn().mockResolvedValue(mockChannel),
   close: jest.fn().mockResolvedValue(undefined)
 };
 
-// Mock connect function
+// Connect function mock
 const connect = jest.fn().mockResolvedValue(mockConnection);
 
 module.exports = {

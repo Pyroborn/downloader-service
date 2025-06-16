@@ -1,7 +1,7 @@
-// Create a mock send function that we can control
+// Creating a mock send function that is controllable
 const mockSend = jest.fn();
 
-// Mock the S3 client and commands first
+// Mocking the S3 client and commands first
 jest.mock('@aws-sdk/client-s3', () => ({
     S3Client: jest.fn(() => ({
         send: mockSend
@@ -14,14 +14,14 @@ jest.mock('@aws-sdk/client-s3', () => ({
     CreateBucketCommand: jest.fn()
 }));
 
-// Mock the Upload class
+// Mocking the Upload class
 jest.mock('@aws-sdk/lib-storage', () => ({
     Upload: jest.fn().mockImplementation(() => ({
         done: jest.fn().mockResolvedValue({ Key: 'test-file-key' })
     }))
 }));
 
-// Mock the Prometheus metrics module
+// Mocking the Prometheus metrics module
 jest.mock('../../config/metrics', () => ({
     metrics: {
         uploadRequestsTotal: { inc: jest.fn() },

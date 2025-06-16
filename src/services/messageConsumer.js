@@ -1,17 +1,16 @@
 const fileService = require('./fileService');
 const rabbitmq = require('../config/rabbitmq');
 
-// Create a deduplication cache to prevent duplicate message processing
-// This is critical for HPA scenarios where multiple instances might process the same message
+// Deduplication cache for message processing
 const processedMessages = new Map();
-const MESSAGE_CACHE_TTL = 60000; // 1 minute TTL for processed message IDs
+const MESSAGE_CACHE_TTL = 60000; // 1 minute TTL
 
-// Function to check if a message has been processed recently
+// Check for duplicate messages
 function isMessageDuplicate(messageId) {
     return processedMessages.has(messageId);
 }
 
-// Function to mark a message as processed
+// Mark message as processed
 function markMessageProcessed(messageId) {
     processedMessages.set(messageId, Date.now());
     
@@ -37,10 +36,8 @@ class MessageConsumer {
         }
 
         try {
-            // Connect to RabbitMQ
             await rabbitmq.connect();
             
-            // Start consuming from upload queue only
             await rabbitmq.consumeQueue(rabbitmq.queues.upload, 
                 this.handleUploadMessage.bind(this));
             
@@ -48,15 +45,12 @@ class MessageConsumer {
             console.log('Message consumer initialized for uploads only');
         } catch (error) {
             console.error('Failed to initialize message consumer:', error);
-            // Retry initialization after delay
             setTimeout(() => this.initialize(), 5000);
         }
     }
 
-    // Handle file upload message
     async handleUploadMessage(message, properties) {
         try {
-            // Check if we've recently processed this message (based on messageId or content hash)
             const messageId = properties?.messageId || JSON.stringify(message);
             
             if (isMessageDuplicate(messageId)) {
@@ -64,12 +58,10 @@ class MessageConsumer {
                 return { skipped: true, reason: 'duplicate' };
             }
             
-            // Validate message
             if (!message.file || !message.metadata) {
                 throw new Error('Invalid upload message: missing file or metadata');
             }
             
-            // Ensure both id and userId are set for consistency
             const metadata = { ...message.metadata };
             const userId = metadata.userId || metadata.id;
             
@@ -77,15 +69,14 @@ class MessageConsumer {
                 throw new Error('Invalid upload message: missing userId or id in metadata');
             }
             
-            // Update metadata to have consistent IDs
+            // Ensure consistent ID properties
             metadata.id = userId;
             metadata.userId = userId;
             
-            // Minimal logging with just the filename
             const originalName = message.file.originalname || 'unknown';
             console.log(`Processing upload via queue: ${originalName} (${userId})`);
             
-            // Create a Buffer from base64 string if it's a string
+            // Convert buffer from various formats
             let fileBuffer;
             if (typeof message.file.buffer === 'string') {
                 fileBuffer = Buffer.from(message.file.buffer, 'base64');
@@ -95,7 +86,6 @@ class MessageConsumer {
                 throw new Error('Invalid file buffer format');
             }
             
-            // Create file object for fileService
             const file = {
                 buffer: fileBuffer,
                 originalname: message.file.originalname,
@@ -103,13 +93,10 @@ class MessageConsumer {
                 size: message.file.size
             };
             
-            // Upload file using fileService
             const result = await fileService.uploadFile(file, metadata);
             
-            // Log success with minimal info
             console.log(`Upload completed via queue: ${result.key.split('/').pop()}`);
             
-            // Mark this message as processed to prevent duplicate processing
             markMessageProcessed(messageId);
             
             return result;
@@ -119,31 +106,24 @@ class MessageConsumer {
         }
     }
 
-    // Handle file download message
     async handleDownloadMessage(message) {
         try {
-            // We should not be receiving download messages via RabbitMQ anymore
-            // Downloads are now handled directly in the HTTP route
+            // Downloads are handled directly in HTTP routes
             // This is kept for backward compatibility
             
-            // Validate message
             if (!message.key || !message.user) {
                 throw new Error('Invalid download message: missing key or user');
             }
             
-            // Log warning about unexpected message
             console.warn(`UNEXPECTED: Download message received via queue for: ${message.key.split('/').pop()}`);
             
-            // Check file access
             const canAccess = await fileService.checkFileAccess(message.key, message.user.userId, message.user.role);
             if (!canAccess) {
                 throw new Error('Access denied to this file');
             }
             
-            // Download file using fileService
             const file = await fileService.downloadFile(message.key, message.user);
             
-            // Return file metadata (we don't return the actual file in the queue response)
             return {
                 key: message.key,
                 ContentType: file.ContentType,

@@ -1,12 +1,12 @@
-// Mock S3 client and commands
+// S3 client and commands mock
 const mockSend = jest.fn();
 
-// Create mock S3 client that returns the mockSend function
+// S3 client mock
 const S3Client = jest.fn(() => ({
   send: mockSend
 }));
 
-// Mock commands
+// Command mocks
 const ListObjectsV2Command = jest.fn();
 const GetObjectCommand = jest.fn();
 const PutObjectCommand = jest.fn();
@@ -22,5 +22,5 @@ module.exports = {
   DeleteObjectCommand,
   HeadBucketCommand,
   CreateBucketCommand,
-  mockSend // Export for test access
+  mockSend // Exported for test access
 }; 

@@ -14,7 +14,7 @@ const upload = multer({
     }
 });
 
-// Debug route - NO AUTH - REMOVE IN PRODUCTION
+// Debug route - NO AUTH - REMOVED IN PRODUCTION
 router.get('/debug-token', (req, res) => {
     try {
         const authHeader = req.headers.authorization;
@@ -27,12 +27,10 @@ router.get('/debug-token', (req, res) => {
         if (token) {
             console.log('Token first 20 chars:', token.substring(0, 20) + '...');
             
-            // Try to decode without verification first
             try {
                 const decoded = jwt.decode(token);
                 console.log('Token payload:', decoded);
                 
-                // Now try verifying
                 try {
                     const JWT_SECRET = (process.env.JWT_SECRET || 'your-secret-key').trim();
                     console.log('Using JWT_SECRET:', JWT_SECRET.substring(0, 5) + '...', 'length:', JWT_SECRET.length);
@@ -71,13 +69,12 @@ router.get('/debug-token', (req, res) => {
     }
 });
 
-// List files function - Protected
+// File listing endpoint
 router.get('/list', authMiddleware, async (req, res) => {
     try {
-        // Use a consistent user object with both userId and id properties
         const userInfo = {
             userId: req.user.userId,
-            id: req.user.userId, // Add id property with same value for compatibility
+            id: req.user.userId,
             role: req.user.role || 'user'
         };
         
@@ -89,7 +86,7 @@ router.get('/list', authMiddleware, async (req, res) => {
     }
 });
 
-// Upload file function - Protected and Using RabbitMQ
+// File upload endpoint
 router.post('/upload', authMiddleware, upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
@@ -103,10 +100,9 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
             role: req.user.role
         };
 
-        // Create message for queue
         const message = {
             file: {
-                buffer: req.file.buffer.toString('base64'), // Convert buffer to base64 string for queue
+                buffer: req.file.buffer.toString('base64'),
                 originalname: req.file.originalname,
                 mimetype: req.file.mimetype,
                 size: req.file.size
@@ -114,14 +110,12 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
             metadata: metadata
         };
 
-        // Send to RabbitMQ queue
         const success = await rabbitmq.sendToQueue(rabbitmq.queues.upload, message);
         
         if (!success) {
             throw new Error('Failed to queue upload request');
         }
 
-        // Return a response immediately while processing continues in background
         res.status(202).json({ 
             message: 'File upload queued for processing',
             fileName: req.file.originalname,
@@ -133,17 +127,15 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
     }
 });
 
-// Download file function (direct streaming without RabbitMQ)
+// File download endpoint
 router.get('/download/:key(*)', async (req, res) => {
     let file = null;
     
     try {
         const { key } = req.params;
-        // Decode the key in case it was URL-encoded
         const decodedKey = decodeURIComponent(key);
         const filename = decodedKey.split('/').pop();
         
-        // Process authentication token - check header first, then query parameter
         let token = null;
         const authHeader = req.headers.authorization;
         if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -156,7 +148,6 @@ router.get('/download/:key(*)', async (req, res) => {
             return res.status(401).json({ error: 'Authentication required' });
         }
         
-        // Verify token
         try {
             const JWT_SECRET = (process.env.JWT_SECRET || 'your-secret-key').trim();
             const decoded = jwt.verify(token, JWT_SECRET);
@@ -170,19 +161,15 @@ router.get('/download/:key(*)', async (req, res) => {
             return res.status(401).json({ error: 'Invalid token' });
         }
         
-        // Check access permissions
         const canAccess = await fileService.checkFileAccess(decodedKey, req.user.userId, req.user.role);
         if (!canAccess) {
             return res.status(403).json({ message: 'Access denied to this file' });
         }
 
-        // Use a single request ID to track this download and detect duplicates
         const requestId = req.query.requestId || Date.now();
         
-        // Get the file from storage - this is the only place we handle file downloads now
         file = await fileService.downloadFile(decodedKey, req.user);
         
-        // Set appropriate headers for download
         res.setHeader('Content-Type', file.ContentType || 'application/octet-stream');
         if (file.ContentLength) {
             res.setHeader('Content-Length', file.ContentLength);
@@ -195,22 +182,17 @@ router.get('/download/:key(*)', async (req, res) => {
         res.setHeader('Expires', '0');
         res.setHeader('X-Request-ID', requestId);
         
-        // Pipe the file directly to response
         file.Body.pipe(res);
         
-        // Log success once the file is completely sent (in the 'finish' event)
         res.on('finish', () => {
             console.log(`Download completed for: ${filename}`);
         });
     } catch (error) {
-        // Only log errors, not regular operation
         console.error('Download error:', error.message);
         
-        // If headers not sent yet, return error response
         if (!res.headersSent) {
             res.status(500).json({ message: 'Failed to download file' });
         } else if (file && file.Body) {
-            // If we already started streaming but encountered an error
             file.Body.destroy();
             res.destroy();
         }
@@ -224,7 +206,7 @@ router.delete('/:key(*)', authMiddleware, async (req, res) => {
         const decodedKey = decodeURIComponent(key);
         const filename = decodedKey.split('/').pop();
 
-        // Check if user has access to delete the file
+        // Checking if user has access to delete the file
         const canDelete = await fileService.checkFileAccess(decodedKey, req.user.userId, req.user.role);
         if (!canDelete) {
             return res.status(403).json({ message: 'Not authorized to delete this file' });

@@ -10,12 +10,11 @@ const messageConsumer = require('./services/messageConsumer');
 const app = express();
 const port = process.env.PORT || 3004;
 
-// CORS Configuration - Fixed to avoid "*" with credentials=true which browsers reject
+// CORS Configuration
 if (process.env.NODE_ENV === 'development') {
     const allowedOrigins = ['http://localhost:3000', 'http://localhost:3002', 'http://localhost:3003'];
     app.use(cors({
         origin: function(origin, callback) {
-            // Allow requests with no origin (like mobile apps, curl, postman)
             if (!origin) return callback(null, true);
             if (allowedOrigins.indexOf(origin) !== -1) {
                 return callback(null, true);
@@ -56,14 +55,11 @@ app.use(express.urlencoded({ extended: true }));
 
 // Request logging middleware
 app.use((req, res, next) => {
-    // Only log essential information and skip health checks
     if (!req.path.includes('/health') && !req.path.includes('/metrics')) {
-        // For file downloads, only log filename, not the full path
         if (req.path.includes('/download/')) {
             const filename = req.path.split('/').pop().split('?')[0];
             console.log(`${new Date().toISOString().split('T')[1]} - ${req.method} Download: ${filename}`);
         } 
-        // For other API requests, minimal logging
         else if (!req.path.includes('/debug')) {
             console.log(`${new Date().toISOString().split('T')[1]} - ${req.method} ${req.path.split('/').slice(0, 3).join('/')}`);
         }
@@ -75,17 +71,13 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
     const startTime = Date.now();
     
-    // Add a 'finish' listener to track when the response is complete
     res.on('finish', () => {
-        const duration = (Date.now() - startTime) / 1000; // Convert to seconds
+        const duration = (Date.now() - startTime) / 1000;
         
-        // Skip metrics endpoint from being tracked to avoid self-measuring
         if (!req.path.includes('/metrics') && !req.path.includes('/health')) {
-            // Get a simplified route path (replace IDs with placeholders)
             const route = req.route?.path || 
                 req.path.replace(/\/[0-9a-f-]{36}\//g, '/:id/').replace(/\/[0-9]+\//g, '/:id/');
                 
-            // Record the request duration
             const { metrics } = require('./config/metrics');
             metrics.httpRequestDurationMicroseconds.observe(
                 { 
@@ -96,7 +88,6 @@ app.use((req, res, next) => {
                 duration
             );
             
-            // Only log if response is not successful or takes longer than expected
             if (res.statusCode >= 400 || duration > 1.0) {
                 console.log(`Request ${req.method} ${req.path} completed in ${duration.toFixed(3)}s with status ${res.statusCode}`);
             }
@@ -106,16 +97,16 @@ app.use((req, res, next) => {
     next();
 });
 
-// Handle preflight requests
+// Handling preflight requests
 app.options('*', cors());
 
-// Initialize RabbitMQ connection and message consumer
+// Initializing RabbitMQ connection and message consumer
 (async () => {
     try {
         await rabbitmq.connect();
         console.log('RabbitMQ connection established');
         
-        // Initialize message consumer
+        // Initializing message consumer
         await messageConsumer.initialize();
         console.log('Message consumer initialized');
     } catch (error) {

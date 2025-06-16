@@ -1,12 +1,12 @@
 const jwt = require('jsonwebtoken');
 
-// Make sure dotenv is initialized - make sure to not include any .env in container
+//  dotenv is initialized 
 require('dotenv').config();
 
-// Get JWT_SECRET directly from environment variables
+// Getting JWT_SECRET directly from environment variables
 let JWT_SECRET = process.env.JWT_SECRET;
 
-// Log only the length for security reasons
+// Log secret length for validation
 if (JWT_SECRET) {
     console.log(`JWT Config: JWT_SECRET loaded with length ${JWT_SECRET.length}`);
 } else {
@@ -14,13 +14,13 @@ if (JWT_SECRET) {
     console.error('Authentication and token validation will fail.');
 }
 
-// Ensure the secret doesn't have any surrounding quotes or whitespace
+// Remove quotes from secret if present
 if (JWT_SECRET && JWT_SECRET.startsWith('"') && JWT_SECRET.endsWith('"')) {
     JWT_SECRET = JWT_SECRET.substring(1, JWT_SECRET.length - 1);
     console.log('JWT Config: Removed quotes from JWT_SECRET');
 }
 
-// Final trim to ensure no whitespace issues
+// Trim whitespace
 if (JWT_SECRET) {
     JWT_SECRET = JWT_SECRET.trim();
 }

@@ -3,7 +3,7 @@ const express = require('express');
 const fileService = require('../../services/fileService');
 const jwt = require('jsonwebtoken');
 
-// Simple mocks - only implement what we need
+// Service mocks
 jest.mock('../../services/fileService', () => ({
   listFiles: jest.fn(),
   downloadFile: jest.fn(),
@@ -37,7 +37,7 @@ jest.mock('../../config/rabbitmq', () => ({
   }
 }));
 
-// Mock jwt module
+// JWT module mock
 jest.mock('jsonwebtoken', () => ({
   verify: jest.fn().mockImplementation((token, secret) => {
     if (token === 'admin-token') {
@@ -60,7 +60,7 @@ jest.mock('jsonwebtoken', () => ({
   decode: jest.fn()
 }));
 
-// Mock multer
+// Multer mock
 jest.mock('multer', () => {
   const multerMock = () => ({
     single: () => (req, res, next) => {
@@ -77,11 +77,11 @@ jest.mock('multer', () => {
   return multerMock;
 });
 
-// Create a simple express app for testing
+// Express app setup
 const app = express();
 app.use(express.json());
 
-// Mock auth middleware
+// Auth middleware mock
 const authMiddleware = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   
@@ -109,7 +109,7 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
-// Import routes logic from the actual file instead of recreating it
+// Import routes
 const fileRoutes = require('../../routes/fileRoutes');
 app.use('/files', fileRoutes);
 
@@ -167,17 +167,17 @@ describe('File Routes', () => {
 
   describe('GET /files/download/:key', () => {
     it('should download file successfully for owner', async () => {
-      // Create a more robust mock for the Body stream
+      // Creating a more robust mock for the Body stream
       const mockStream = {
         pipe: jest.fn(function(destination) {
-          // Simulate successful piping to response by ending it
+          // Simulating successful piping to response by ending it
           if (destination && typeof destination.end === 'function') {
             process.nextTick(() => destination.end('test content'));
           }
           return destination;
         }),
         on: jest.fn(function(event, callback) {
-          // Immediately trigger end event to simulate completion
+          // Immediately triggering end event to simulate completion
           if (event === 'end' && callback) {
             process.nextTick(callback);
           }
@@ -198,7 +198,7 @@ describe('File Routes', () => {
     });
 
     it('should handle access denied errors', async () => {
-      // Mock checkFileAccess to deny access
+      // Mocking checkFileAccess to deny access
       fileService.checkFileAccess.mockResolvedValueOnce(false);
 
       await request(app)
@@ -240,7 +240,7 @@ describe('File Routes', () => {
     });
 
     it('should handle access denied errors', async () => {
-      // Mock checkFileAccess to deny access
+      // Mocking checkFileAccess to deny access
       fileService.checkFileAccess.mockResolvedValueOnce(false);
 
       await request(app)

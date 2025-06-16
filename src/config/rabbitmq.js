@@ -3,20 +3,19 @@ const { metrics } = require('./metrics');
 const crypto = require('crypto');
 require('dotenv').config();
 
-// RabbitMQ configuration
+// Configuration
 const rabbitmqUrl = process.env.RABBITMQ_URL || 'amqp://localhost:5672';
 const queueUpload = process.env.RABBITMQ_QUEUE_UPLOAD || 'file_upload_queue';
 const queueDownload = process.env.RABBITMQ_QUEUE_DOWNLOAD || 'file_download_queue';
 
-// Create connection and channel
+// Connection variables
 let connection = null;
 let channel = null;
 
-// Generate a unique message ID for deduplication
+// Generate unique message ID for deduplication
 function generateMessageId(message) {
-    // Create a deterministic hash of the message content
     if (typeof message === 'object') {
-        // For upload messages, create a hash from user ID and file name/size
+        // Upload message hash
         if (message.file && message.metadata) {
             const { originalname, size } = message.file;
             const userId = message.metadata.id || message.metadata.userId;
@@ -25,7 +24,7 @@ function generateMessageId(message) {
                 .digest('hex');
         }
         
-        // For download messages, use the key and user ID
+        // Download message hash
         if (message.key && message.user) {
             const { key } = message;
             const userId = message.user.userId;
@@ -35,7 +34,7 @@ function generateMessageId(message) {
         }
     }
     
-    // Fallback to a random ID + timestamp
+    // Fallback random ID
     return `${crypto.randomBytes(8).toString('hex')}-${Date.now()}`;
 }
 
@@ -45,40 +44,34 @@ async function connect() {
         connection = await amqp.connect(rabbitmqUrl);
         channel = await connection.createChannel();
         
-        // Ensure queues exist
         await channel.assertQueue(queueUpload, { durable: true });
         await channel.assertQueue(queueDownload, { durable: true });
         
         console.log('Connected to RabbitMQ');
         
-        // Start queue monitoring
         setInterval(updateQueueMetrics, 5000);
         
         return { connection, channel };
     } catch (error) {
         console.error('Error connecting to RabbitMQ:', error);
-        // Retry connection after delay
         console.log('Retrying connection in 5 seconds...');
         setTimeout(connect, 5000);
     }
 }
 
-// Update metrics about queue sizes - useful for autoscaling
+// Update queue metrics for monitoring
 async function updateQueueMetrics() {
     try {
         if (!channel) {
             return;
         }
         
-        // Get queue information for the upload queue
         const uploadQueueInfo = await channel.checkQueue(queueUpload);
         metrics.rabbitmqQueueSizeGauge.set({ queue: queueUpload }, uploadQueueInfo.messageCount);
         
-        // Get queue information for the download queue
         const downloadQueueInfo = await channel.checkQueue(queueDownload);
         metrics.rabbitmqQueueSizeGauge.set({ queue: queueDownload }, downloadQueueInfo.messageCount);
         
-        // Log queue sizes if non-zero for monitoring
         if (uploadQueueInfo.messageCount > 0 || downloadQueueInfo.messageCount > 0) {
             console.log(`[RabbitMQ] Queue sizes - Upload: ${uploadQueueInfo.messageCount}, Download: ${downloadQueueInfo.messageCount}`);
         }
@@ -94,10 +87,8 @@ async function sendToQueue(queue, message) {
             await connect();
         }
         
-        // Generate a message ID for deduplication
         const messageId = generateMessageId(message);
         
-        // Send message as buffer with persistent flag and messageId
         const success = channel.sendToQueue(
             queue, 
             Buffer.from(JSON.stringify(message)), 
@@ -107,13 +98,11 @@ async function sendToQueue(queue, message) {
             }
         );
         
-        // Update queue metrics after sending
         updateQueueMetrics().catch(console.error);
         
         return success;
     } catch (error) {
         console.error(`Error sending message to queue ${queue}:`, error);
-        // Try to reconnect and send again
         connection = null;
         channel = null;
         await connect();
@@ -128,34 +117,28 @@ async function sendToQueue(queue, message) {
     }
 }
 
-// Consume messages from a queue
+// Consume messages from queue
 async function consumeQueue(queue, callback) {
     try {
         if (!channel) {
             await connect();
         }
         
-        // Set prefetch to 1 to only handle one message at a time per consumer
         await channel.prefetch(1);
         
-        // Use noAck: false to ensure messages aren't automatically acknowledged
         await channel.consume(queue, async (msg) => {
             if (msg !== null) {
                 try {
                     console.log(`[RabbitMQ] Received message from ${queue}, processing...`);
                     const content = JSON.parse(msg.content.toString());
                     
-                    // Pass the message and properties to the callback
                     await callback(content, msg.properties);
                     
-                    // Explicitly acknowledge the message once processed
                     channel.ack(msg);
                     console.log(`[RabbitMQ] Successfully processed message from ${queue}`);
                 } catch (error) {
                     console.error(`[RabbitMQ] Error processing message from queue ${queue}:`, error);
                     
-                    // Negative acknowledgment - don't requeue if processing failed
-                    // This prevents the message from continuously failing
                     channel.nack(msg, false, false);
                     console.log(`[RabbitMQ] Message nacked and will not be requeued`);
                 }
@@ -165,7 +148,6 @@ async function consumeQueue(queue, callback) {
         console.log(`[RabbitMQ] Consumer registered for queue: ${queue} with explicit acknowledgment`);
     } catch (error) {
         console.error(`[RabbitMQ] Error consuming from queue ${queue}:`, error);
-        // Try to reconnect and consume again
         connection = null;
         channel = null;
         setTimeout(() => consumeQueue(queue, callback), 5000);
@@ -183,7 +165,6 @@ async function closeConnection() {
     }
 }
 
-// Export configuration and functions
 module.exports = {
     connect,
     sendToQueue,
