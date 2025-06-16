@@ -71,11 +71,11 @@ pipeline {
                         def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
                         sh """
                             echo "Starting SonarCloud analysis..."
-                            echo "Project: Pyroborn_user-service | Organization: pyroborn"
+                            echo "Project: Pyroborn_downloader-service | Organization: pyroborn"
                             
                             # Run SonarScanner with minimal output
                             ${scannerHome}/bin/sonar-scanner \
-                                -Dsonar.projectKey=Pyroborn_user-service \
+                                -Dsonar.projectKey=Pyroborn_downloader-service \
                                 -Dsonar.organization=pyroborn \
                                 -Dsonar.host.url=https://sonarcloud.io \
                                 -Dsonar.login=${SONAR_TOKEN} \
