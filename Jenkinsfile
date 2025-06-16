@@ -73,18 +73,10 @@ pipeline {
                             echo "Starting SonarCloud analysis..."
                             echo "Project: Pyroborn_downloader-service | Organization: pyroborn"
                             
-                            # Run SonarScanner with minimal output
+                            # Run SonarScanner - let sonar-project.properties handle most config
                             ${scannerHome}/bin/sonar-scanner \
-                                -Dsonar.projectKey=Pyroborn_downloader-service \
-                                -Dsonar.organization=pyroborn \
                                 -Dsonar.host.url=https://sonarcloud.io \
                                 -Dsonar.login=${SONAR_TOKEN} \
-                                -Dsonar.sources=. \
-                                -Dsonar.tests=. \
-                                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
-                                -Dsonar.coverage.exclusions="**/*.test.js,**/tests/**,**/node_modules/**,**/coverage/**,**/data/**" \
-                                -Dsonar.cpd.exclusions="**/*.test.js,**/tests/**,**/node_modules/**" \
-                                -Dsonar.exclusions="**/node_modules/**,**/coverage/**,**/data/**,**/*.min.js" \
                                 -Dsonar.projectVersion=${BUILD_NUMBER} \
                                 -Dsonar.buildString=${BUILD_NUMBER} \
                                 -Dsonar.log.level=WARN \
