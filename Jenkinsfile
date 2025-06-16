@@ -66,25 +66,25 @@ pipeline {
         stage('SonarCloud Analysis') {
             steps {
                 script {
-                    // Run SonarCloud analysis using Jenkins tool (same as user-service)
+                    // Run SonarCloud analysis using Jenkins tool
                     withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
                         def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
                         sh """
                             echo "Starting SonarCloud analysis..."
-                            echo "Project: Pyroborn_downloader-service | Organization: pyroborn"
+                            echo "Project: Pyroborn_user-service | Organization: pyroborn"
                             
                             # Run SonarScanner with minimal output
                             ${scannerHome}/bin/sonar-scanner \
-                                -Dsonar.projectKey=Pyroborn_downloader-service \
+                                -Dsonar.projectKey=Pyroborn_user-service \
                                 -Dsonar.organization=pyroborn \
                                 -Dsonar.host.url=https://sonarcloud.io \
                                 -Dsonar.login=${SONAR_TOKEN} \
                                 -Dsonar.sources=src \
-                                -Dsonar.tests=src/tests \
+                                -Dsonar.tests=tests \
                                 -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
-                                -Dsonar.coverage.exclusions="**/*.test.js,**/tests/**,**/node_modules/**,**/coverage/**" \
+                                -Dsonar.coverage.exclusions="**/*.test.js,**/tests/**,**/node_modules/**,**/coverage/**,**/data/**" \
                                 -Dsonar.cpd.exclusions="**/*.test.js,**/tests/**,**/node_modules/**" \
-                                -Dsonar.exclusions="**/node_modules/**,**/coverage/**,**/*.min.js" \
+                                -Dsonar.exclusions="**/node_modules/**,**/coverage/**,**/data/**,**/*.min.js" \
                                 -Dsonar.projectVersion=${BUILD_NUMBER} \
                                 -Dsonar.buildString=${BUILD_NUMBER} \
                                 -Dsonar.log.level=WARN \
@@ -125,6 +125,7 @@ pipeline {
                 }
             }
         }
+
         
         stage('Build Image') {
             steps {
