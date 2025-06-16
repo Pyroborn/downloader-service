@@ -66,62 +66,51 @@ pipeline {
         stage('SonarCloud Analysis') {
             steps {
                 script {
-                    // Run SonarCloud analysis using Jenkins tool
-                    withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
-                        def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-                        sh """
-                            echo "Starting SonarCloud analysis..."
-                            echo "Project: Pyroborn_downloader-service | Organization: pyroborn"
-                            
-                            # Run SonarScanner with explicit parameters (matching user-service)
-                            ${scannerHome}/bin/sonar-scanner \
-                                -Dsonar.projectKey=Pyroborn_downloader-service \
-                                -Dsonar.organization=pyroborn \
-                                -Dsonar.host.url=https://sonarcloud.io \
-                                -Dsonar.login=${SONAR_TOKEN} \
-                                -Dsonar.sources=src \
-                                -Dsonar.tests=src/tests \
-                                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
-                                -Dsonar.coverage.exclusions="**/*.test.js,**/tests/**,**/node_modules/**,**/coverage/**,**/data/**" \
-                                -Dsonar.cpd.exclusions="**/*.test.js,**/tests/**,**/node_modules/**" \
-                                -Dsonar.exclusions="**/node_modules/**,**/coverage/**,**/data/**,**/*.min.js" \
-                                -Dsonar.projectVersion=${BUILD_NUMBER} \
-                                -Dsonar.buildString=${BUILD_NUMBER} \
-                                -Dsonar.log.level=WARN \
-                                -Dsonar.verbose=false > sonar-output.log 2>&1
-                            
-                            # Show only summary
-                            echo "=== SonarCloud Analysis Complete ==="
-                            if grep -q "EXECUTION SUCCESS" sonar-output.log; then
-                                echo "✅ Analysis completed successfully"
-                                # Extract and show key metrics
-                                grep -E "(Total time:|EXECUTION SUCCESS)" sonar-output.log | tail -2
-                            else
-                                echo "❌ Analysis failed - check logs"
-                                tail -10 sonar-output.log
-                                exit 1
-                            fi
-                        """
+                    echo "=== SonarCloud Analysis Debug ==="
+                    echo "Current directory: ${pwd()}"
+                    echo "Workspace: ${env.WORKSPACE}"
+                    
+                    // List files to verify structure
+                    sh 'ls -la'
+                    sh 'ls -la src/ || echo "No src directory"'
+                    sh 'ls -la src/tests/ || echo "No src/tests directory"'
+                    sh 'ls -la coverage/ || echo "No coverage directory"'
+                    
+                    // Check if sonar-scanner exists
+                    sh 'which sonar-scanner || echo "sonar-scanner not found"'
+                    sh 'sonar-scanner --version || echo "Cannot get sonar-scanner version"'
+                    
+                    echo "=== Starting SonarCloud Analysis ==="
+                    
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                        sh '''
+                            sonar-scanner \
+                            -Dsonar.projectKey=Pyroborn_downloader-service \
+                            -Dsonar.organization=pyroborn \
+                            -Dsonar.host.url=https://sonarcloud.io \
+                            -Dsonar.login=${SONAR_TOKEN} \
+                            -Dsonar.sources=src \
+                            -Dsonar.tests=src/tests \
+                            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+                            -Dsonar.coverage.exclusions=**/*.test.js,**/tests/**,**/node_modules/**,**/coverage/**,**/dist/**,**/build/** \
+                            -Dsonar.exclusions=**/node_modules/**,**/coverage/**,**/dist/**,**/build/**,**/*.min.js \
+                            -Dsonar.test.exclusions=**/node_modules/**,**/coverage/**,**/dist/**,**/build/** \
+                            -Dsonar.projectVersion=${env.BUILD_NUMBER} \
+                            -Dsonar.buildString=${env.BUILD_TAG} \
+                            -Dsonar.log.level=DEBUG \
+                            -Dsonar.verbose=true
+                        '''
                     }
+                    
+                    echo "=== SonarCloud Analysis Completed ==="
                 }
             }
             post {
                 always {
-                    // Archive SonarCloud reports and logs
                     script {
-                        if (fileExists('.scannerwork/report-task.txt')) {
-                            archiveArtifacts artifacts: '.scannerwork/report-task.txt', allowEmptyArchive: true
-                        }
-                        if (fileExists('sonar-output.log')) {
-                            archiveArtifacts artifacts: 'sonar-output.log', allowEmptyArchive: true
-                        }
+                        // Archive SonarQube reports if they exist
+                        sh 'find . -name "sonar-report.json" -o -name ".scannerwork" | head -10 || echo "No SonarQube reports found"'
                     }
-                }
-                failure {
-                    echo 'SonarCloud analysis failed!'
-                }
-                success {
-                    echo 'SonarCloud analysis completed successfully!'
                 }
             }
         }
