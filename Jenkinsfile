@@ -73,10 +73,18 @@ pipeline {
                             echo "Starting SonarCloud analysis..."
                             echo "Project: Pyroborn_downloader-service | Organization: pyroborn"
                             
-                            # Run SonarScanner - let sonar-project.properties handle most config
+                            # Run SonarScanner with explicit parameters (matching user-service)
                             ${scannerHome}/bin/sonar-scanner \
+                                -Dsonar.projectKey=Pyroborn_downloader-service \
+                                -Dsonar.organization=pyroborn \
                                 -Dsonar.host.url=https://sonarcloud.io \
                                 -Dsonar.login=${SONAR_TOKEN} \
+                                -Dsonar.sources=src \
+                                -Dsonar.tests=src/tests \
+                                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+                                -Dsonar.coverage.exclusions="**/*.test.js,**/tests/**,**/node_modules/**,**/coverage/**,**/data/**" \
+                                -Dsonar.cpd.exclusions="**/*.test.js,**/tests/**,**/node_modules/**" \
+                                -Dsonar.exclusions="**/node_modules/**,**/coverage/**,**/data/**,**/*.min.js" \
                                 -Dsonar.projectVersion=${BUILD_NUMBER} \
                                 -Dsonar.buildString=${BUILD_NUMBER} \
                                 -Dsonar.log.level=WARN \
@@ -90,8 +98,7 @@ pipeline {
                                 grep -E "(Total time:|EXECUTION SUCCESS)" sonar-output.log | tail -2
                             else
                                 echo "❌ Analysis failed - check logs"
-                                echo "Last 15 lines of output:"
-                                tail -15 sonar-output.log
+                                tail -10 sonar-output.log
                                 exit 1
                             fi
                         """
