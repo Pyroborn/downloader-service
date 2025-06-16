@@ -76,30 +76,44 @@ pipeline {
                     sh 'ls -la src/tests/ || echo "No src/tests directory"'
                     sh 'ls -la coverage/ || echo "No coverage directory"'
                     
-                    // Check if sonar-scanner exists
-                    sh 'which sonar-scanner || echo "sonar-scanner not found"'
-                    sh 'sonar-scanner --version || echo "Cannot get sonar-scanner version"'
-                    
                     echo "=== Starting SonarCloud Analysis ==="
                     
-                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                        sh '''
-                            sonar-scanner \
-                            -Dsonar.projectKey=Pyroborn_downloader-service \
-                            -Dsonar.organization=pyroborn \
-                            -Dsonar.host.url=https://sonarcloud.io \
-                            -Dsonar.login=${SONAR_TOKEN} \
-                            -Dsonar.sources=src \
-                            -Dsonar.tests=src/tests \
-                            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
-                            -Dsonar.coverage.exclusions=**/*.test.js,**/tests/**,**/node_modules/**,**/coverage/**,**/dist/**,**/build/** \
-                            -Dsonar.exclusions=**/node_modules/**,**/coverage/**,**/dist/**,**/build/**,**/*.min.js \
-                            -Dsonar.test.exclusions=**/node_modules/**,**/coverage/**,**/dist/**,**/build/** \
-                            -Dsonar.projectVersion=${env.BUILD_NUMBER} \
-                            -Dsonar.buildString=${env.BUILD_TAG} \
-                            -Dsonar.log.level=DEBUG \
-                            -Dsonar.verbose=true
-                        '''
+                    // Use Jenkins SonarQube Scanner tool instead of direct sonar-scanner call
+                    withSonarQubeEnv('SonarCloud') {
+                        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                            sh '''
+                                # Check if sonar-scanner is available in Jenkins tools
+                                if command -v sonar-scanner >/dev/null 2>&1; then
+                                    echo "Using sonar-scanner from PATH"
+                                    SCANNER_CMD="sonar-scanner"
+                                elif [ -f "${SONAR_SCANNER_HOME}/bin/sonar-scanner" ]; then
+                                    echo "Using sonar-scanner from SONAR_SCANNER_HOME: ${SONAR_SCANNER_HOME}"
+                                    SCANNER_CMD="${SONAR_SCANNER_HOME}/bin/sonar-scanner"
+                                else
+                                    echo "Installing SonarScanner locally..."
+                                    # Download and install SonarScanner locally
+                                    wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+                                    unzip -q sonar-scanner-cli-4.8.0.2856-linux.zip
+                                    SCANNER_CMD="./sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner"
+                                fi
+                                
+                                echo "Using scanner: $SCANNER_CMD"
+                                
+                                $SCANNER_CMD \
+                                -Dsonar.projectKey=Pyroborn_downloader-service \
+                                -Dsonar.organization=pyroborn \
+                                -Dsonar.host.url=https://sonarcloud.io \
+                                -Dsonar.login=${SONAR_TOKEN} \
+                                -Dsonar.sources=src \
+                                -Dsonar.tests=src/tests \
+                                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+                                -Dsonar.coverage.exclusions=**/*.test.js,**/tests/**,**/node_modules/**,**/coverage/**,**/dist/**,**/build/** \
+                                -Dsonar.exclusions=**/node_modules/**,**/coverage/**,**/dist/**,**/build/**,**/*.min.js \
+                                -Dsonar.test.exclusions=**/node_modules/**,**/coverage/**,**/dist/**,**/build/** \
+                                -Dsonar.projectVersion=${BUILD_NUMBER} \
+                                -Dsonar.buildString=${BUILD_TAG}
+                            '''
+                        }
                     }
                     
                     echo "=== SonarCloud Analysis Completed ==="
